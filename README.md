@@ -72,5 +72,10 @@ python main.py
 
 ## Screenshots
 
+<img width="960" height="540" alt="изображение" src="https://github.com/user-attachments/assets/a1f852c2-2999-4fec-ba7b-50f9c3f0d13f" />
+
+<img width="960" height="540" alt="изображение" src="https://github.com/user-attachments/assets/94389d8d-2580-437d-b8df-5b2786110960" />
+
+
 # IMPORTANT:
 ## This is a work-in-progress. If you encounter any bugs, visual glitches, or unexpected behavior, please report them in the Issues section. Your feedback helps make r-audio better.
