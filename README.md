@@ -1,4 +1,4 @@
-# Audio player
+# R-Audio
 This is my audio player written from scratch in Python using PyAudio and audioread libraries, using TUI without curses-like libraries
 
 # How to use
