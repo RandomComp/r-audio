@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 red_fg = 			"\x1B[31m"
 red_bg = 			"\x1B[41m"
 

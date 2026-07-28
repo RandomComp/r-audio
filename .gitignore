@@ -8,6 +8,7 @@
 *.bin
 *.bak
 *.so
+*.cpp
 test.py
 test_gui.py
 __pycache__
@@ -17,3 +18,9 @@ repo_pushing_token
 err
 stderr
 .fuse_*
+virtual_console_tests.py
+virtual_console_setup.py
+video_test.py
+test_img_show.py
+test2.py
+audioplayer_dbus.py

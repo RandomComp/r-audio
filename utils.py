@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import builtins
 
 from typing import Iterable

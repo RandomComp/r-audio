@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 from filedialog import FileDialog
 
 from audioplayer import AudioPlayer

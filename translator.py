@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import tui
 
 from listgenerator import ListGenerator

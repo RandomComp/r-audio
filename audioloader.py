@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import audioread
 
 from pydub import AudioSegment

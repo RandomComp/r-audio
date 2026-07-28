@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 from listgenerator import AsyncListGenerator
 
 from event import EventEmitter
