@@ -6,39 +6,53 @@ This is my audio player written from scratch in Python using PyAudio and audiore
 ## Install the requirements
 **Install the system requirements:**
 **For Debian-based OS:**
-><br/><code>sudo apt update</code>
+```bash
+sudo apt update && sudo apt intall python3-dev portaudio19-dev
+```
 
-><code>sudo apt intall python3-dev portaudio19-dev</code>
 **For Arch-based OS:**
-><br/>pyaudio in pip will install portaudio automatically
+pyaudio in pip will install portaudio automatically
 
-**Install the pip requirements (may broke your system, it is better to use a virtual environment (see below)):**
+**Install the pip requirements (may broke your system (PEP 668), it is better to use a virtual environment (see below)):**
 
-><br/><code>python -m pip install -r requirements.txt</code>
+```bash
+python -m pip install -r requirements.txt
+```
 
 **or follow steps to create virtual environment:**
 
 ## Create your virtual environment
-><br/><code>python -m venv venv</code>
+
+```bash
+python -m venv venv
+```
 
 ## Activate your virtual environment
 **For Windows:**
 
-><br/><code>venv\bin\activate</code>
+```cmd
+venv\bin\activate
+```
 
 **For Unix-like OS (MacOS, Linux):**
 
-><br/><code>source venv/bin/activate</code>
+```bash
+source venv/bin/activate
+```
 
 ## Then install the pip requirements
 
-><code>python -m pip install -r requirements.txt</code>
+```bash
+python -m pip install -r requirements.txt
+```
 
 # Using:
 
 ## Run main file using this command in your shell (zsh/bash/cmd/powershell):
 
-<code>python main.py</code>
+```bash
+python main.py
+```
 
 ## Use your arrows on keyboard to control your audio player:
 **Use "←" and "→" to seek the audio**
