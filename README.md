@@ -11,7 +11,12 @@ sudo apt update && sudo apt intall python3-dev portaudio19-dev
 ```
 
 **For Arch-based OS:**
-pyaudio in pip will install portaudio automatically
+**pyaudio in pip will install portaudio automatically**
+
+## or install system-wide:
+```bash
+sudo pacman -S python-pyaudio
+```
 
 **Install the pip requirements (may broke your system (PEP 668), it is better to use a virtual environment (see below)):**
 
