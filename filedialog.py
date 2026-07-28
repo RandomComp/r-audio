@@ -174,9 +174,9 @@ q -- quit menu""")
 					continue
 
 				if obj.is_dir() or obj.is_symlink():
-					folders.append(str(obj))
+					folders.append(obj)
 				elif obj.is_file() and (not filters or obj.suffix.lower() in filters):
-					files.append(str(obj))
+					files.append(obj)
 				
 			folders = sorted(folders, key=lambda x: Path.stat(x).st_mtime, reverse=True)
 				

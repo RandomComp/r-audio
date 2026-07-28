@@ -6,3 +6,5 @@ plyer
 wcwidth
 psutil
 pillow
+pydub
+dbus_next

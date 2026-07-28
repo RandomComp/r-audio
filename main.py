@@ -171,7 +171,7 @@ class AudioPlayerApp:
 		
 		if self.need_quit: return
 
-		choicer = FileDialog(dir=Path("/run/media/rdev/SSD/Downloads/Песни/Любимые песни/"), gui=self.gui, multiple=True, translator=self.translator)
+		choicer = FileDialog(dir=Path("~/Music"), gui=self.gui, multiple=True, translator=self.translator)
 
 		files = await choicer.choice_file(filters=AudioPlayer.supported_extensions)
 
