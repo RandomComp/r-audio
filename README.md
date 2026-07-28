@@ -10,7 +10,7 @@ This is my audio player written from scratch in Python using PyAudio and audiore
 
 ><code>sudo apt intall python3-dev portaudio19-dev</code>
 **For Arch-based OS:**
-><br/><code>sudo pacman -Sy portaudio</code>
+><br/>pyaudio in pip will install portaudio automatically
 
 **Install the pip requirements (may broke your system, it is better to use a virtual environment (see below)):**
 
