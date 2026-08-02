@@ -59,7 +59,7 @@ python -m pip install -r requirements.txt
 python main.py
 ```
 
-## Use your arrows on keyboard to control your audio player:
+## Audio player controls:
 **Use "←" and "→" to seek the audio**
 
 **Use "↑" and "↓" to control the audio volume**
