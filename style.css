@@ -1,0 +1,79 @@
+* {
+	background-color: transparent;
+}
+
+#window {
+	background-color: rgba(36, 36, 40, 255);
+}
+
+#title {
+	font-size: 20px;
+	font-weight: 700;
+	color: #EFEFEF;
+}
+
+#lead {
+	font-size: 18px;
+	font-weight: 500;
+	color: #A0A0A0;
+}
+
+#h_title {
+	font-size: 18px;
+	font-weight: 700;
+	color: #EFEFEF;
+}
+
+#h_lead {
+	font-size: 16px;
+	font-weight: 500;
+	color: #A0A0A0;
+}
+
+[class="table_value"] {
+	color: #E8E8E8;
+	font-size: 22px;
+	font-weight: 600;
+}
+
+#prev {
+	border-radius: 25px;
+	background-color: rgba(48, 48, 48, 100);
+	border: 1px solid #1b1b1b;
+}
+#play_pause {
+	border-radius: 35px;
+	background-color: rgba(48, 48, 48, 100);
+	border: 1px solid #1b1b1b;
+}
+#next {
+	border-radius: 25px;
+	background-color: rgba(48, 48, 48, 100);
+	border: 1px solid #1b1b1b;
+}
+
+#progress {
+	background-color: rgba(96, 96, 96, 200);
+	border-radius: 6px;
+}
+
+#progress::chunk {
+	background-color: rgba(48, 160, 0, 200);
+	border-radius: 6px;
+}
+
+#player_widget {
+	background-color: rgba(50, 50, 54, 255);
+}
+
+#second_half {
+	background-color: rgba(50, 50, 54, 200);
+	border-radius: 10px;
+
+	border: 3px solid rgba(0, 0, 0, 64);
+}
+
+[class~="time"] {
+	color: #D0D0D0;
+	font-size: 15px;
+}

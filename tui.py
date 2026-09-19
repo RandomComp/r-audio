@@ -55,9 +55,9 @@ def parse_print_dict(value: dict, sep: str=" ", end: str="\n", level: int=0) -> 
 
 		if len(dict_value) > mid_len:
 			result += "\n"
-		
+
 		key_str = parse_print_str(key, end='') if isinstance(key, str) else parse_print(key, end='', level=level + 1)
-		
+
 		value_str = parse_print_str(dict_value, end='') if isinstance(dict_value, str) else parse_print(dict_value, end='', level=level + 1)
 
 		tab_str = "\t" * level
@@ -167,9 +167,9 @@ def parse_print(*_values: object, sep: str=" ", end: str="\n", level: int=0) -> 
 				result = str(value)
 
 			values.append(f"{result}{_sep}")
-	
+
 	values.append(end)
-	
+
 	result = ''.join(values) if values else ""
 
 	return result
@@ -192,7 +192,7 @@ async def get_input_byte(loop: asyncio.AbstractEventLoop, bytes: int=1):
 		return str(result, encoding="utf-8")
 
 	byte = await loop.run_in_executor(None, sys.stdin.read, bytes)
-	
+
 	return byte
 
 def set_cursor_pos(x: int, y: int):
@@ -203,7 +203,7 @@ def get_cursor_pos() -> tuple[int, int]:
 	sys.stdout.write("\x1B[6n")
 
 	sys.stdout.flush()
-	
+
 	sys.stdin.read(2)
 
 	buffer = c = ""
@@ -346,22 +346,22 @@ def show_image_kitty(x: int, y: int, img: Image.Image) -> None:
 	# 3. Формируем управляющую команду Kitty Graphics Protocol
 	# a=T (передача и вывод), f=24 (формат RGB 24-bit), s=ширина, v=высота
 	control_fragment = f"\x1B_Ga=T,f=24,s={width},v={height},m=1;"
-	
+
 	set_cursor_pos(x, y)
 
 	# Выводим управляющую команду
 	sys.stdout.write(control_fragment)
-	
+
 	chunk_size = 4096
 
 	for i in range(0, len(b64_data), chunk_size):
 		chunk = b64_data[i:(i + chunk_size)]
-		
+
 		if (i + chunk_size) >= len(b64_data):
 			sys.stdout.write(f"\x1B_Gm=0;{chunk}\x1B\\")
 		else:
 			sys.stdout.write(f"\x1B_Gm=1;{chunk}\x1B\\")
-			
+
 	sys.stdout.write("\n")
 
 	sys.stdout.flush()
@@ -378,14 +378,14 @@ def get_char_size_emulator() -> tuple[int, int]:
 	# Структура winsize: 2 байта (строки), 2 байта (колонки), 2 байта (x пиксели), 2 байта (y пиксели)
 	fmt = "HHHH"
 	buf = struct.pack(fmt, 0, 0, 0, 0)
-	
+
 	result = fcntl.ioctl(sys.stdout.fileno(), TIOCGWINSZ, buf)
 
 	rows, cols, x_pixels, y_pixels = struct.unpack(fmt, result)
-	
+
 	if x_pixels == 0 or y_pixels == 0:
 		return 8, 16
-		
+
 	char_width = x_pixels // cols
 	char_height = y_pixels // rows
 
@@ -406,7 +406,7 @@ def load_and_show_img(path: str, x: int, y: int, size: int) -> None:
 	clear_screen()
 
 	show_image_kitty(x, y, img)
-	
+
 def clamp_text(text: str, max_width: int=None) -> str:
 	if not max_width:
 		columns, rows = get_terminal_size()
@@ -428,9 +428,9 @@ def clamp_text(text: str, max_width: int=None) -> str:
 			result += f"{word}\n"
 		else:
 			result += word
-		
+
 		line_width += len(word)
-	
+
 	return result
 
 def switch_to_raw() -> list:
@@ -438,9 +438,9 @@ def switch_to_raw() -> list:
 		print(f"Terminal mode switching default/raw is unsupported on your OS ({sys.platform}).")
 
 		return
-	
+
 	fileno = sys.stdin.fileno()
-	
+
 	default_settings = tcgetattr(fileno)
 
 	setraw(fileno)
@@ -452,7 +452,7 @@ def switch_to_default(default_settings) -> None:
 		print(f"Terminal mode switching default/raw is unsupported on your OS ({sys.platform}).")
 
 		return
-	
+
 	fileno = sys.stdin.fileno()
 
 	tcsetattr(fileno, TCSADRAIN, default_settings)
@@ -462,9 +462,9 @@ def clear_screen() -> None:
 
 	print(" " * columns * rows, end='')
 
-	set_cursor_pos(0, 0)
+	set_cursor_pos(1, 1)
 
-def __text_scroll(text: str, max_length: int, time: float, speed: float=10) -> str:
+def line_scroll(text: str, max_length: int, time: float, speed: float=10) -> str:
 	text_len = len(text)
 
 	if text_len <= max_length:
@@ -475,7 +475,7 @@ def __text_scroll(text: str, max_length: int, time: float, speed: float=10) -> s
 	pos = int(((time * speed) % (text_len + max_length + 1)) - max_length)
 
 	end = pos + max_length
-	
+
 	result = result[max(0, pos):end]
 
 	if pos >= 0:
@@ -495,8 +495,8 @@ def text_scroll(block: str, length: int, time: float, speed: float=10) -> str:
 	for i, string in enumerate(strings):
 		end = "\n" if i != (strings_cnt - 1) else ""
 
-		result += f"{__text_scroll(string, length, time, speed)}{end}"
-	
+		result += f"{line_scroll(string, length, time, speed)}{end}"
+
 	return result
 
 def __ljust(string: str, length: int, fill_char: str=" ") -> str:
@@ -504,9 +504,9 @@ def __ljust(string: str, length: int, fill_char: str=" ") -> str:
 
 	if str_len >= length:
 		return string
-	
+
 	spaces = length - str_len
-	
+
 	return f"{string}{fill_char * spaces}"
 
 def ljust(block: str, length: int, fill_char: str=" ") -> str:
@@ -520,7 +520,7 @@ def ljust(block: str, length: int, fill_char: str=" ") -> str:
 		end = "\n" if i != (strings_cnt - 1) else ""
 
 		result += f"{__ljust(string, length, fill_char=fill_char)}{end}"
-	
+
 	return result
 
 def __rjust(string: str, length: int, fill_char: str=" ") -> str:
@@ -528,9 +528,9 @@ def __rjust(string: str, length: int, fill_char: str=" ") -> str:
 
 	if str_len >= length:
 		return string
-	
+
 	spaces = length - str_len
-	
+
 	return f"{fill_char * spaces}{string}"
 
 def rjust(block: str, length: int, fill_char: str=" ") -> str:
@@ -544,7 +544,7 @@ def rjust(block: str, length: int, fill_char: str=" ") -> str:
 		end = "\n" if i != (strings_cnt - 1) else ""
 
 		result += f"{__rjust(string, length, fill_char=fill_char)}{end}"
-	
+
 	return result
 
 def __center(string: str, length: int, fill_char: str=" ") -> str:
@@ -552,9 +552,9 @@ def __center(string: str, length: int, fill_char: str=" ") -> str:
 
 	if str_len == 0 or str_len >= length:
 		return string
-	
+
 	spaces = (length - str_len) // 2
-	
+
 	return f"{fill_char * spaces}{string}{fill_char * spaces}"
 
 def center(block: str, length: int, fill_char: str=" ") -> str:
@@ -568,7 +568,7 @@ def center(block: str, length: int, fill_char: str=" ") -> str:
 		end = "\n" if i != (strings_cnt - 1) else ""
 
 		result += f"{__center(string, length, fill_char=fill_char)}{end}"
-	
+
 	return result
 
 def text_over(orig: str, _text: str, over_ch: str=r" ") -> str:
@@ -585,7 +585,7 @@ def text_over(orig: str, _text: str, over_ch: str=r" ") -> str:
 		index = slice(space[0], space[1])
 
 		text[index] = orig[index]
-	
+
 	return ''.join(text)
 
 from math import floor, ceil
@@ -594,7 +594,7 @@ def progress(progress: float, dest: float, max_width: int, c: str="━", marker_
 	norm_progress = max(0, min(1, progress / dest if dest > 0 else 1))
 
 	marker_len = len(marker)
-	
+
 	width = norm_progress * max_width
 
 	remaining_progress_len = ceil(max_width - width)
@@ -622,7 +622,7 @@ def progress(progress: float, dest: float, max_width: int, c: str="━", marker_
 		remaining_progress = text_over(remaining_progress, text_over_bar[start:(start + remaining_progress_len)])
 
 	bar = f"{passed_progress_style}{passed_progress}{marker_style}{marker}{remaining_progress_style}{remaining_progress}"
-					
+
 	return f"{ansi.default}{bar}{ansi.default}"
 
 def time_progress(second: float, seconds: float, max_width: int, c: str="━", marker_style: str=ansi.default, passed_progress_style: str=f"{ansi.bold}{ansi.green_fg}", remaining_progress_style: str=ansi.default, text_over_bar: str="", text_center_over_bar: str="") -> None:
@@ -632,7 +632,7 @@ def time_progress(second: float, seconds: float, max_width: int, c: str="━", m
 
 	second_str = utils.format_time(second)
 
-	width = max_width - 2 - seconds_str_len * 2
+	width = max_width - len(second_str) - len(seconds_str) - 3
 
 	start = seconds_str_len - 1
 
@@ -643,18 +643,16 @@ def time_progress(second: float, seconds: float, max_width: int, c: str="━", m
 			text_over_bar = text_over(text_over_bar, text_center_over_bar)
 		else:
 			text_over_bar = text_center_over_bar
-	
+
 	text_over_bar = ljust(text_over_bar, max_width)
 
 	bar = progress(
-		second, seconds, width, c=c, 
-		marker_style=marker_style, 
-		passed_progress_style=passed_progress_style, 
+		second, seconds, width, c=c,
+		marker_style=marker_style,
+		passed_progress_style=passed_progress_style,
 		remaining_progress_style=remaining_progress_style,
 		text_over_bar=text_over_bar[start:]
 	)
-
-	second_str = second_str.ljust(seconds_str_len - 1)
 
 	second_str = text_over(second_str, text_over_bar[:start])
 
@@ -663,5 +661,5 @@ def time_progress(second: float, seconds: float, max_width: int, c: str="━", m
 	seconds_str = text_over(seconds_str, text_over_bar[start:])
 
 	result = f"{second_str} {bar} {seconds_str}"
-					
+
 	return f"{ansi.default}{result}"

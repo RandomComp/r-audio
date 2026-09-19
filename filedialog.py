@@ -14,10 +14,11 @@ from translator import Translator
 
 import tui
 
-from random import shuffle
-
 class FileDialog:
-	def __init__(self, title: str="Choice a file", dir: Path=Path().home(), multiple: bool=False, gui: bool=True, translator: Translator=None):
+	def __init__(self, input_queue: asyncio.Queue, title: str="Choice a file", dir: Path | None=None, multiple: bool=False, gui: bool=True, translator: Translator | None=None):
+		if not dir:
+			dir = Path().home()
+
 		self.title = title
 
 		if translator:
@@ -54,7 +55,7 @@ q -- quit menu""")
 
 			self.__supported_extension_str = self.__translated("Supported extensions")
 
-			self.menu = Menu(title=self.title, info=self.info, multiple=self.multiple, translator=translator)
+			self.menu = Menu(input_queue, title=self.title, info=self.info, multiple=self.multiple, translator=translator)
 
 			self.menu.on_update_subcribe(self.menu.menu_cli_frame)
 
@@ -62,11 +63,11 @@ q -- quit menu""")
 
 	def __output(self, *values: object, sep: str=" ", end: str="\n") -> None:
 		tui.print(*values, sep=sep, end=end)
-	
+
 	def __translated_output(self, *values: object, sep: str=" ", end: str="\n") -> None:
 		self.__output(self.__translated(*values, sep=sep), end=end)
-	
-	def __translated(self, *values: object, sep: str=" ") -> None:
+
+	def __translated(self, *values: object, sep: str=" ") -> str:
 		values_str = []
 
 		for value in values:
@@ -76,12 +77,12 @@ q -- quit menu""")
 				value_str = self.translator.translate(value_str)
 
 			values_str.append(value_str)
-		
+
 		return sep.join(values_str)
-	
+
 	def select(self, option: int, allow_paths: bool=True) -> None:
 		view_options = self.menu.get_view_full_options()
-			
+
 		obj: Path = view_options[option]
 
 		if obj.is_file():
@@ -89,7 +90,7 @@ q -- quit menu""")
 				self.selected_files.append(obj)
 			else:
 				self.selected_files.remove(obj)
-				
+
 			self.menu.select(option)
 
 			if not self.multiple:
@@ -99,10 +100,10 @@ q -- quit menu""")
 
 		elif (obj.is_dir() or obj.is_symlink()) and allow_paths:
 			self.dir = obj.resolve()
-			
+
 			self.menu.close()
-		
-	async def input_handler(self, event_name: str, option: int | tuple[int, int], input_key: str) -> None:
+
+	async def input_handler(self, _: str, option: int | tuple[int, int], input_key: str) -> None:
 		if input_key in "\r\n":
 			if isinstance(option, int):
 				self.select(option)
@@ -122,13 +123,13 @@ q -- quit menu""")
 				self.find_buf = self.find_buf[:-1]
 
 				self.menu.set_find(self.find_buf)
-		
+
 		elif self.find.is_set() and input_key == "\x1B":
 			self.menu.stop_find()
 
 			self.find.clear()
 
-		elif self.find.is_set() and input_key.isalnum():
+		elif self.find.is_set() and input_key.isprintable() and input_key not in "↑↓→←":
 			self.find_buf += input_key
 
 			self.menu.set_find(self.find_buf)
@@ -140,19 +141,21 @@ q -- quit menu""")
 			self.menu.set_find()
 
 			self.find.set()
-	
+
 	async def choice_file_gui(self, filters: list[str] | None=None) -> list[Path | None] | None:
 		try:
-			return map(Path, filechooser.open_file(filers=filters, multiple=self.multiple, title=self.title))
+			result = filechooser.open_file(filers=filters, multiple=self.multiple, title=self.title)
 		except TypeError:
 			return None
-		
+
 		# TODO: Написать свою альтернативу plyer.filechooser используя zenity и GetOpenFileName
-	
+
+		return [Path(path) for path in result]
+
 	async def choice_file_cli(self, filters: list[str] | None=None) -> list[Path | None] | None:
 		while not self.finished.is_set():
 			objs = []
-			
+
 			retry = True
 
 			while retry:
@@ -179,14 +182,9 @@ q -- quit menu""")
 					folders.append(obj)
 				elif obj.is_file() and (not filters or obj.suffix.lower() in filters):
 					files.append(obj)
-				
+
 			folders = sorted(folders, key=lambda x: Path.stat(x).st_mtime, reverse=True)
-				
 			files = sorted(files, key=lambda x: Path.stat(x).st_mtime, reverse=True)
-
-			shuffle(folders)
-
-			shuffle(files)
 
 			menu_list = []
 
@@ -198,7 +196,7 @@ q -- quit menu""")
 				self.objs.append(folder)
 
 				menu_list.append(f"{ansi.bold}{ansi.green_fg}{folder.name}/")
-				
+
 			for file in files:
 				file = Path(file)
 
@@ -218,14 +216,16 @@ q -- quit menu""")
 
 		return self.selected_files
 
-	async def choice_file(self, filters: list[str] | None=None) -> list[Path | None] | None:
+	async def choice_file(self, filters: tuple[str] | None=None) -> list[Path | None] | None:
 		result = []
 
 		if self.gui:
 			result = await self.choice_file_gui(filters=filters)
 		else:
-			result = await self.choice_file_cli(filters=filters)
-		
 			tui.clear_screen()
-		
+
+			result = await self.choice_file_cli(filters=filters)
+
+			tui.clear_screen()
+
 		return result if self.multiple else result[0] if result else None

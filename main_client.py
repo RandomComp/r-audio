@@ -1,9 +1,6 @@
 #!/usr/bin/env python
 
-from asyncio.exceptions import CancelledError
-
-from filedialog import FileDialog
-from audioplayer import AudioPlayer
+from audioplayer_client import AudioPlayerClientTUI
 from translator import Translator
 
 import ansi
@@ -20,13 +17,11 @@ from sys import argv, platform
 
 from pathlib import Path
 
-from random import shuffle
-
 import tomllib
 
 from playlist import Playlist
 
-class AudioPlayerApp:
+class AudioPlayerClientApp:
 	def __init__(self, gui: bool=True) -> None:
 		self.gui = gui
 
@@ -177,39 +172,46 @@ class AudioPlayerApp:
 
 		if self.need_quit: return
 
-		config = tomllib.loads(Path("r-audio-server.toml").read_text())
+		self.input_queue = asyncio.Queue()
+		self.input = Input(self.input_queue)
+
+		background_task = asyncio.create_task(self.input.loop())
+
+		config = tomllib.loads(Path("r-audio-client.toml").read_text())
 
 		# files = ["https://music.youtube.com/watch?v=8etHSLhHT4o&si=rLT7aeo6Am9Nwtiz"]
 
-		player = None
+		self.player = AudioPlayerClientTUI(self.input_queue, config=config, translator=self.translator)
 
+		await self.player.open_dbus()
+
+		await self.player.loop()
+
+		self.__translated_output()
+
+		await self.player.close()
+
+		background_task.cancel()
 		try:
-			playlist = Playlist()
-
-			player = AudioPlayer(config=config, translator=self.translator)
-
-			await player.open()
-
-			player.load(playlist)
-
-			player.play()
-
-			await player.loop()
-
-		except KeyboardInterrupt, CancelledError:
+			await background_task
+		except asyncio.CancelledError:
 			pass
-
-		finally:
-			if player:
-				await player.close()
-				await player.clean()
 
 	def run(self, script_name: str, platform: str, *args, **kwargs) -> None:
 		asyncio.run(self.main(script_name, platform, *args, **kwargs))
 
 if __name__ == "__main__":
-	app = AudioPlayerApp(gui=False)
+	app = AudioPlayerClientApp(gui=False)
 
-	args, kwargs = utils.parse_args(argv[1:])
+	default_settings = tui.switch_to_raw()
 
-	app.run(argv[0], platform, *args, **kwargs)
+	print(ansi.invisible_cursor, end='')
+
+	try:
+		args, kwargs = utils.parse_args(argv[1:])
+
+		app.run(argv[0], platform, *args, **kwargs)
+	finally:
+		print(ansi.visible_cursor, end='')
+
+		tui.switch_to_default(default_settings)

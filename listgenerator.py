@@ -13,7 +13,7 @@ class ListGenerator:
 		self.results = []
 
 		self.next_index = 0
-	
+
 	def next(self):
 		is_iterable = True
 
@@ -36,7 +36,7 @@ class ListGenerator:
 			result = self[self.next_index]
 		except IndexError:
 			out_of_range = True
-		
+
 		if out_of_range:
 			raise StopIteration()
 
@@ -59,10 +59,10 @@ class ListGenerator:
 		end = key
 
 		is_slice = isinstance(key, slice)
-		
+
 		if is_slice:
 			end = key.stop if not key.step or key.step > 0 else key.start
-		
+
 		out_of_range = False
 
 		while end == None or end >= len(self.results):
@@ -86,11 +86,11 @@ class ListGenerator:
 		index = key
 
 		out_of_range = False
-		
+
 		try:
 			if isinstance(key, slice):
 				index = key.start if key.start else 0
-			
+
 				end = key.stop if not key.step or key.step > 0 else key.start
 
 				end = end if end else -1
@@ -100,20 +100,20 @@ class ListGenerator:
 						self.results[index] = value
 
 						index += key.step
-				
+
 				except IndexError:
 					pass
 
 			elif isinstance(key, int):
 				self.results[index] = value
-				
+
 		except IndexError:
 			if end:
 				out_of_range = True
 
 		if out_of_range:
 			raise IndexError("ListGenerator index out of range")
-	
+
 	def index(self, value, start: int = 0, _stop: int=-1) -> int:
 		index = start
 
@@ -123,9 +123,9 @@ class ListGenerator:
 					return index
 			except IndexError:
 				break
-				
+
 			index += 1
-		
+
 		return -1
 
 	def replace(self, old_value, new_value, count: int=-1):
@@ -135,15 +135,15 @@ class ListGenerator:
 			while index >= 0:
 				if self[index] == old_value:
 					self[index] = new_value
-				
+
 				index += 1
-				
+
 				index = self.index(old_value, index)
 		except IndexError:
 			pass
 
 		return self
-	
+
 	def append(self, *args):
 		for arg in args:
 			self.results.append(arg)
@@ -157,7 +157,7 @@ class ListGenerator:
 
 	def pop(self, index: int) -> Any:
 		return self.results.pop(index)
-	
+
 	def __contains__(self, item):
 		result = item in self.results
 
@@ -168,7 +168,7 @@ class ListGenerator:
 				result = cur_item == item
 		except StopIteration:
 			pass
-			
+
 		return result
 
 	def all(self) -> list:
@@ -177,7 +177,7 @@ class ListGenerator:
 				self.next()
 			except StopIteration:
 				break
-		
+
 		return self.results
 
 	def other(self) -> list:
@@ -190,7 +190,7 @@ class ListGenerator:
 				break
 
 			self.next_index += 1
-		
+
 		return results
 
 	def __len__(self):
@@ -198,10 +198,10 @@ class ListGenerator:
 
 	def __str__(self):
 		return self.__repr__()
-	
+
 	def __repr__(self) -> str:
 		return f"ListGenerator(results={self.results}, gen={str(self.gen)})"
-	
+
 	#def _beatiful_str(self) -> str:
 	#	return f"{ansi.default}ListGenerator({ansi.bold}{ansi.magenta_fg}results{ansi.default}={tui.parse_print_arr(self.results)}, {ansi.bold}{ansi.magenta_fg}gen{ansi.default}={ansi.yellow_fg}{str(self.gen)}{ansi.default})"
 
@@ -212,35 +212,25 @@ class AsyncListGenerator:
 		self.results = []
 
 		self.next_index = 0
-	
-	async def next(self):
-		# is_iterable = True
 
-		result = None
+	async def next(self) -> Any:
+		result = await anext(self.gen)
 
-		try:
-			result = await anext(self.gen)
-		except StopAsyncIteration:
-			raise StopAsyncIteration
-		# except TypeError:
-		# 	is_iterable = False
-
-		# if not is_iterable:
-		# 	raise TypeError(f"Cannot use AsyncListGenerator using non-async-iterable type {self.gen.__class__}")
-		
 		if result:
 			self.results.append(result)
 
 		return result
 
-	async def __anext__(self):
+	async def __anext__(self) -> Any:
 		out_of_range = False
+
+		result = None
 
 		try:
 			result = await self.get(self.next_index)
 		except IndexError:
 			out_of_range = True
-		
+
 		if out_of_range:
 			raise StopAsyncIteration
 
@@ -263,12 +253,12 @@ class AsyncListGenerator:
 		end = key
 
 		is_slice = isinstance(key, slice)
-		
+
 		if is_slice:
 			end = key.stop if not key.step or key.step > 0 else key.start
-		
+
 		out_of_range = False
-		
+
 		while end == None or end >= len(self.results):
 			try:
 				await self.next()
@@ -290,11 +280,11 @@ class AsyncListGenerator:
 		index = key
 
 		out_of_range = False
-		
+
 		try:
 			if isinstance(key, slice):
 				index = key.start if key.start else 0
-			
+
 				end = key.stop if not key.step or key.step > 0 else key.start
 
 				end = end if end else -1
@@ -304,20 +294,20 @@ class AsyncListGenerator:
 						self.results[index] = value
 
 						index += key.step
-				
+
 				except IndexError:
 					pass
 
 			elif isinstance(key, int):
 				self.results[index] = value
-				
+
 		except IndexError:
 			if end:
 				out_of_range = True
 
 		if out_of_range:
 			raise IndexError("AsyncListGenerator index out of range")
-	
+
 	async def index(self, value, start: int = 0, _stop: int=-1) -> int:
 		index = start
 
@@ -327,9 +317,9 @@ class AsyncListGenerator:
 					return index
 			except IndexError:
 				break
-				
+
 			index += 1
-		
+
 		return -1
 
 	async def replace(self, old_value, new_value, count: int=-1) -> None:
@@ -339,9 +329,9 @@ class AsyncListGenerator:
 			while index >= 0:
 				if await self.get(index) == old_value:
 					self[index] = new_value
-				
+
 					index += 1
-				
+
 				index = self.index(old_value)
 		except IndexError:
 			pass
@@ -355,7 +345,7 @@ class AsyncListGenerator:
 		self.results.remove(value)
 
 		return self
-	
+
 	async def __contains__(self, item):
 		result = item in self.results
 
@@ -366,7 +356,7 @@ class AsyncListGenerator:
 				result = cur_item == item
 		except StopAsyncIteration:
 			pass
-			
+
 		return result
 
 	async def all(self) -> list:
@@ -375,7 +365,7 @@ class AsyncListGenerator:
 				await self.next()
 			except StopAsyncIteration:
 				break
-		
+
 		return self.results
 
 	async def other(self) -> list:
@@ -388,7 +378,7 @@ class AsyncListGenerator:
 				break
 
 			self.next_index += 1
-		
+
 		return results
 
 	def __len__(self):
@@ -396,6 +386,6 @@ class AsyncListGenerator:
 
 	def __str__(self):
 		return self.__repr__()
-	
+
 	def __repr__(self):
 		return f"AsyncListGenerator(results={self.results}, gen={str(self.gen)})"

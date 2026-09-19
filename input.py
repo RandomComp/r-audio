@@ -8,7 +8,7 @@ import tui
 
 import asyncio
 
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 async def input_byte_gen(loop) -> AsyncGenerator[str, None]:
 	while True:
@@ -17,28 +17,18 @@ async def input_byte_gen(loop) -> AsyncGenerator[str, None]:
 		yield byte
 
 class Input:
-	def __init__(self) -> None:
-		self.input = EventEmitter("input")
-
-		self.finished = asyncio.Event()
-
+	def __init__(self, queue: asyncio.Queue) -> None:
 		loop = asyncio.get_running_loop()
 
-		self.gen = AsyncListGenerator(input_byte_gen(loop))
-	
+		self._gen = AsyncListGenerator(input_byte_gen(loop))
+		self._queue = queue
+
 	async def peek(self, pos: int=0) -> list[str]:
-		return await self.gen.get(pos + self.gen.next_index)
-	
-	async def next(self, pos: int=0) -> str:
-		return await self.gen.__anext__()
-	
-	def reset(self) -> None:
-		loop = asyncio.get_running_loop()
+		return await self._gen.get(pos + self._gen.next_index)
 
-		self.gen = AsyncListGenerator(input_byte_gen(loop))
+	async def next(self) -> str:
+		return await anext(self._gen)
 
-		self.finished.clear()
-	
 	async def parse_esc(self) -> str:
 		input_key = "\x1B"
 
@@ -47,32 +37,32 @@ class Input:
 		if next_byte == "[":
 			next_byte = await self.peek(1)
 
-			esc_arrows = "ABCD"
+			esc_arrows = ["A", "B", "C", "D"]
 
 			if next_byte in esc_arrows:
 				input_arrows = "↑↓→←"
 
 				input_key = input_arrows[esc_arrows.index(next_byte)]
-					
-			self.gen.next_index += 2
+
+			self._gen.next_index += 2
 		else:
 			input_key = next_byte
 
 		return input_key
-	
+
 	async def parse_esc_win(self) -> str:
 		input_key = "\xe0"
 
 		next_byte = await self.peek(0)
 
-		esc_arrows = "HPMK"
+		esc_arrows = ["H", "P", "M", "K"]
 
 		if next_byte in esc_arrows:
 			input_arrows = "↑↓→←"
 
 			input_key = input_arrows[esc_arrows.index(next_byte)]
-							
-			self.gen.next_index += 1
+
+			self._gen.next_index += 1
 		else:
 			input_key = next_byte
 
@@ -87,35 +77,13 @@ class Input:
 
 		elif input_key in "\xe0\x00":
 			input_key = await self.parse_esc_win()
-		
+
 		return input_key
-	
+
 	async def loop(self) -> None:
-		while not self.finished.is_set():
-			tasks = [
-				asyncio.create_task(self.next()),
-				asyncio.create_task(self.finished.wait())
-			]
-
-			done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-
-			input_key = '\0'
-
-			for task in done:
-				input_key = task.result()
-
-			for task in pending:
-				task.cancel()
-
-			if self.finished.is_set():
-				break
+		while True:
+			input_key = await self.next()
 
 			input_key = await self.parse_key(input_key)
 
-			stop = await self.input.invoke(input_key)
-
-			if stop and stop[0]:
-				self.finished.set()
-	
-	def close(self) -> None:
-		self.finished.set()
+			await self._queue.put(input_key)

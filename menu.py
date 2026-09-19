@@ -14,12 +14,10 @@ import event
 
 from translator import Translator
 
-from input import Input
-
 from listgenerator import ListGenerator
 
 class Menu:
-	def __init__(self, options: list[str]=[], full_options: list[str]=None, title: str="Menu", info: str=None, multiple: bool=False, translator: Translator=None) -> None:
+	def __init__(self, input_queue: asyncio.Queue, options: list[str]=[], full_options: list[str]=None, title: str="Menu", info: str=None, multiple: bool=False, translator: Translator=None) -> None:
 		self.options = options
 
 		if not full_options:
@@ -44,18 +42,16 @@ a -- multiple selection mode
 q -- quit menu""")
 
 		self.info = info
-		
+
 		self.multiple = multiple
 
 		self.input_event = event.EventEmitter("input")
 
 		self.__menu_update = event.EventEmitter("menu_update")
 
-		self.input = Input()
+		self.input = input_queue
 
 		self.on_update_subcribe(self.menu_cli_frame)
-
-		self.input.input.subscribe(self.menu_default_input_handler)
 
 		self.finished = asyncio.Event()
 
@@ -94,17 +90,17 @@ q -- quit menu""")
 		self.__selected_item_str = self.__translated("selected item")
 
 		#self.console = utils.VirtualConsole()
-	
+
 	def __output(self, *values: object, sep: str=" ", end: str="\n") -> None:
 		string = f"{sep.join(map(str, values))}{end}"
 
 		self.__lines_outputed += len(string.splitlines())
 
 		tui.print(string, end='')
-	
+
 	def __translated_output(self, *values: object, sep: str=" ", end: str="\n") -> None:
 		self.__output(self.__translated(*values, sep=sep), end=end)
-	
+
 	def __translated(self, *values: object, sep: str=" ") -> None:
 		values_str = []
 
@@ -115,9 +111,9 @@ q -- quit menu""")
 				value_str = self.translator.translate(value_str)
 
 			values_str.append(value_str)
-		
+
 		return sep.join(values_str)
-	
+
 	def __output_update(self) -> None:
 		columns, rows = tui.get_terminal_size()
 
@@ -127,13 +123,13 @@ q -- quit menu""")
 		self.__lines_outputed = 0
 
 		tui.set_cursor_pos(0, 0)
-	
+
 	def use_default_handlers(self) -> None:
 		self.on_input_subcribe(self.menu_default)
-	
+
 	def handle_command(self, command: str) -> None:
 		self.__output(command)
-	
+
 	def handle_command_keys(self, input_key: str) -> None:
 		if input_key == "\x1B":
 			self.commands = False
@@ -145,64 +141,85 @@ q -- quit menu""")
 			self.command_buf = ""
 		else:
 			self.command_buf += input_key
-	
-	async def menu_default_input_handler(self, event_name: str, input_key: str) -> None:
-		if input_key == "↑":
-			self.highlighted_option -= 1
-		elif input_key == "↓":
-			self.highlighted_option += 1
-			
-		elif self.commands:
-			self.handle_command_keys(input_key)
-	
-		# TODO: Нормализовать байтовую строку input_key и обычную строку к единому виду в Windows
-		
-		self.highlighted_options = self.highlighted_option
-		
-		if self.shift_select:
-			if self.highlighted_option >= self.shift_option_start:
-				self.highlighted_options = (self.shift_option_start, self.highlighted_option)
-			else:
-				self.highlighted_options = (self.highlighted_option, self.shift_option_start)
-		
-		push_key = True
 
-		if not self.find.is_set() and not self.commands:
-			push_key = False
+	async def menu_default_input_handler(self) -> None:
+		while not self.finished.is_set():
+			get_task = asyncio.create_task(self.input.get())
+			wait_event = asyncio.create_task(self.finished.wait())
 
-			if input_key == "q":
-				self.input.close()
+			done, pending = await asyncio.wait(
+				[get_task, wait_event],
+				return_when=asyncio.FIRST_COMPLETED
+			)
 
-				self.finished.set()
+			for task in pending:
+				task.cancel()
 
-				push_key = True
-			
-			elif input_key == "a":
-				self.shift_select = not self.shift_select
+				try:
+					await task
+				except asyncio.CancelledError:
+					pass
 
-				self.shift_option_start = self.highlighted_option
-			
-			elif input_key == ":":
-				self.commands = True
-			else:
-				push_key = True
+			input_key = ""
 
-		if push_key and not self.commands:
-			await self.input_event.invoke(self.highlighted_options, input_key)
-				
-		await self.update()
-	
+			if get_task in done:
+				input_key = get_task.result()
+
+			if self.finished.is_set():
+				break
+
+			if input_key == "↑":
+				self.highlighted_option -= 1
+			elif input_key == "↓":
+				self.highlighted_option += 1
+
+			elif self.commands:
+				self.handle_command_keys(input_key)
+
+			self.highlighted_options = self.highlighted_option
+
+			if self.shift_select:
+				if self.highlighted_option >= self.shift_option_start:
+					self.highlighted_options = (self.shift_option_start, self.highlighted_option)
+				else:
+					self.highlighted_options = (self.highlighted_option, self.shift_option_start)
+
+			push_key = True
+
+			if not self.find.is_set() and not self.commands:
+				push_key = False
+
+				if input_key == "q" or input_key == "\x1B":
+					self.finished.set()
+
+					push_key = True
+
+				elif input_key == "a":
+					self.shift_select = not self.shift_select
+
+					self.shift_option_start = self.highlighted_option
+
+				elif input_key == ":":
+					self.commands = True
+				else:
+					push_key = True
+
+			if push_key and not self.commands:
+				await self.input_event.invoke(self.highlighted_options, input_key)
+
+			await self.update()
+
 	def get_view_full_options(self) -> list:
 		return ListGenerator(option for option in self.full_options \
 		  		if self.find_buf.lower() in str(option).lower())
-	
+
 	def get_view_options(self) -> list:
 		return ListGenerator((i, option) for i, option in enumerate(self.full_options) \
 		  		if self.find_buf.lower() in str(option).lower())
-	
+
 	def select(self, option: int) -> None:
 		view_options = self.get_view_full_options()
-			
+
 		option_name = view_options[option]
 
 		if option_name not in self.selected_options:
@@ -219,7 +236,7 @@ q -- quit menu""")
 		self.options = options
 
 		self.option_cnt = len(options)
-	
+
 	def display_option(self, option: str, max_width: int, is_selected: bool, full_option: str=None) -> None:
 		selected_marker = "[ ]" if self.multiple else ""
 
@@ -230,14 +247,14 @@ q -- quit menu""")
 
 			if full_option:
 				selected_marker = "[X]" if full_option in self.selected_options else "[ ]"
-		
+
 		dur = time()
 
 		if is_selected:
 			option = tui.text_scroll(option, option_width, dur)
 
 			option = tui.ljust(option, option_width)
-				
+
 			self.__output(f"│{selected_marker} {ansi.inverse}{option}{ansi.default}│")
 		else:
 			option_len = len(option)
@@ -250,14 +267,14 @@ q -- quit menu""")
 			option = tui.ljust(option, option_width)
 
 			self.__output(f"│{selected_marker} {ansi.default}{option}{ansi.default}│")
-	
+
 	async def menu_cli_frame(self, event_name: str, filters: list[str]) -> None:
 		columns, rows = tui.get_terminal_size()
 
 		dur = time()
-			
+
 		view_options = [i for i, _ in self.get_view_options()]
-			
+
 		view_options_cnt = len(view_options)
 
 		self.highlighted_option = 0 if view_options_cnt <= 0 else self.highlighted_option % view_options_cnt
@@ -293,7 +310,7 @@ q -- quit menu""")
 			self.state_string += "\n"
 
 			self.state_string += tui.ljust(f"{mess}{inputed}", columns)
-		
+
 		info_msg = tui.center(tui.clamp_text(self.__translated("Type \":h\" and press enter to see more information (double esc to exit)")), columns)
 
 		head = 2 + len(self.title.splitlines())
@@ -314,7 +331,7 @@ q -- quit menu""")
 			self.options_display_start = self.highlighted_option
 
 		self.__output(tui.center(tui.text_scroll(self.title, columns, time=dur), columns))
-				
+
 		screen_width = columns - 2
 
 		options_display_end = self.options_display_start + options_display_cnt
@@ -340,7 +357,7 @@ q -- quit menu""")
 					is_selected = True
 
 			self.display_option(option, columns, is_selected, full_option=self.full_options[option_index])
-		
+
 		if not view_options:
 			self.display_option(self.__translated("(NO OPTIONS)"), columns, True)
 
@@ -356,16 +373,16 @@ q -- quit menu""")
 			self.__output(tui.ljust(f":{tui.text_scroll(self.command_buf, columns - 1, dur)}", columns))
 
 		self.__output_update()
-	
+
 	async def timer(self) -> None:
 		while not self.finished.is_set():
 			await asyncio.sleep(0.1)
 
 			await self.update()
-	
+
 	async def menu_gui(self) -> list[str | None]:
 		raise NotImplementedError()
-		
+
 		return self.selected_options
 
 	async def loop(self, filters: list[str] | None=None) -> list[str]:
@@ -373,7 +390,7 @@ q -- quit menu""")
 
 		await self.update()
 
-		await asyncio.gather(self.timer(), self.input.loop())
+		await asyncio.gather(self.timer(), self.menu_default_input_handler())
 
 		return self.selected_options
 
@@ -387,7 +404,6 @@ q -- quit menu""")
 
 	async def reset(self) -> None:
 		self.finished.clear()
-		self.input.reset()
 		self.highlighted_option = 0
 		self.options.clear()
 		self.option_cnt = 0
@@ -409,5 +425,3 @@ q -- quit menu""")
 
 	def close(self) -> None:
 		self.finished.set()
-
-		self.input.close()

@@ -12,13 +12,15 @@ from re import sub, split
 
 from listgenerator import ListGenerator
 
+import numpy as np
+
 def ansi_len(ansi_str: str) -> int:
 	ch_len = builtins.len(ansi_str)
 
 	index = ansi_str.find("\x1B[")
 
 	result = 0
-	
+
 	while index != -1:
 		temp_result = 2 # [
 
@@ -35,7 +37,7 @@ def ansi_len(ansi_str: str) -> int:
 			temp_result += inc
 
 			c = get_ch(ansi_str, index + temp_result, ch_len)
-		
+
 		if c in commands:
 			temp_result += 1
 
@@ -225,7 +227,7 @@ def num_len(txt: str, i: int, c_len: int) -> int:
 
 	while get_ch(txt, i + result, c_len).isdigit():
 		result += 1
-	
+
 	return result
 
 def parse_music_file_name(_file_name: str) -> tuple[str, str]:
@@ -234,7 +236,7 @@ def parse_music_file_name(_file_name: str) -> tuple[str, str]:
 	file_name = _file_name
 
 	file_name_and_ext = _file_name.split(".mp")
-	
+
 	file_name_and_ext_len = len(file_name_and_ext)
 
 	if not file_name_and_ext:
@@ -242,7 +244,7 @@ def parse_music_file_name(_file_name: str) -> tuple[str, str]:
 
 	if file_name_and_ext_len >= 1:
 		file_name = file_name_and_ext[0]
-	
+
 	file_name = sub(r"_-?\d+$", "", file_name)
 
 	lead_and_name = [match.replace("_", " ").strip() for match in split(r"-+(?!.*-)", file_name, 1) if match.strip()]
@@ -259,24 +261,33 @@ def split_by_punctuation(text: str, punc_re=r" |\.|,|!|\?|:|-|\"|\(|\)|/|\||\n|\
 
 	return (result, words)
 
-def format_time(time: int):
+def format_time(time: float, wordly: bool=True) -> str:
+	if time == np.inf:
+		return "inf"
+
 	hours = int((time / (60 * 60)) % 24)
 	minutes = int((time / 60) % 60)
 	seconds = int(time % 60)
 
 	result = ""
 
-	if hours != 0:
-		result += f"{hours:02} h "
+	if wordly:
+		if hours != 0:
+			result += f"{hours:02} h "
 
-	if minutes != 0:
-		result += f"{minutes:02} m "
+		if minutes != 0:
+			result += f"{minutes:02} m "
 
-	result += f"{seconds:02} s"
+		result += f"{seconds:02} s"
+
+	elif hours > 0:
+		result = f"{hours:02}:{minutes:02}:{seconds:02}"
+	else:
+		result = f"{minutes:02}:{seconds:02}"
 
 	return result
 
-def format_size(size: int, base: int=1024, 
+def format_size(size: int, base: int=1024,
 				unit_names: list[str]=["B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB", "RB", "QB"]) -> str:
 	if base <= 1:
 		raise RuntimeError(f"Base ({base}) cannot be <= 1")
@@ -284,7 +295,7 @@ def format_size(size: int, base: int=1024,
 	index = 0
 
 	result = []
-	
+
 	while size > 1 and index < len(unit_names) - 1:
 		number = size % base
 
@@ -351,7 +362,7 @@ def parse_args(argv: list[str]) -> tuple[list, dict]:
 def is_input_bytes() -> bool:
 	if sys.platform == "win32":
 		from msvcrt import kbhit
-		
+
 		return kbhit()
 	else:
 		raise NotImplementedError()
@@ -359,8 +370,8 @@ def is_input_bytes() -> bool:
 def get_parent_process_name():
 	current_process = psutil.Process(os.getppid())
 	parent_process = current_process.parent()
-	
+
 	if parent_process:
 		return parent_process.name()
-	
+
 	return "not found"

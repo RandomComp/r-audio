@@ -1,0 +1,14 @@
+[audio]
+mock = false
+default_volume = 1.0
+crossfade = true
+crossfade_time_s = 5
+gapless = false
+chunk_dur_s = 0.05
+
+loudness_equalization = true
+loudness_equalization_dbfs_max = -5
+
+[server]
+logs = true
+addr = "127.0.0.1:6700"

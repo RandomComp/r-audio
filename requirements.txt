@@ -1,10 +1,6 @@
 pyaudio
 mutagen
-audioread
 numpy
-plyer
 wcwidth
 psutil
-pillow
-pydub
 dbus_next

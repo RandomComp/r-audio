@@ -1,0 +1,36 @@
+[interface]
+show_help = false
+show_equalizer = true
+
+show_id3_cover = true
+show_title = true
+show_lead = true
+
+show_volume_text = true
+logs = true
+
+[color-scheme]
+title_color = "\u001B[31;1m"
+lead_color = "\u001B[96;1m"
+
+volume_passed_progress_color = "\u001B[96;1m"
+volume_remaining_progress_color = "\u001B[0m"
+
+timeline_passed_progress_color = "\u001B[32;1m"
+timeline_remaining_progress_color = "\u001B[0m"
+
+equalizer_color = "\u001B[37m"
+
+[control]
+play_pause = " "
+
+go_previous_track = "z"
+go_next_track = "c"
+
+quit = "q"
+
+[dbus]
+enabled = true
+
+[server]
+addr = "127.0.0.1:6700"
