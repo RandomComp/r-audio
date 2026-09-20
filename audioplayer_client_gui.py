@@ -188,6 +188,7 @@ class AnimatedLabel(qtw.QLabel):
 
 		self.normal_geometry = None
 		self.after_mouse_press_geometry = None
+		self.anim = None
 
 	def enterEvent(self, event):
 		"""Срабатывает при наведении мыши"""
@@ -206,8 +207,25 @@ class AnimatedLabel(qtw.QLabel):
 
 		super().enterEvent(event)
 
+	def leaveEvent(self, a0):
+		"""Срабатывает, когда мышь уходит с кнопки"""
+
+		if self.normal_geometry:
+			self.anim = qtcore.QPropertyAnimation(self, b"geometry")
+			self.anim.setDuration(150)
+			self.anim.setEndValue(self.normal_geometry)
+			self.anim.setEasingCurve(qtcore.QEasingCurve.Type.OutCubic)
+			self.anim.start()
+
+			self.normal_geometry = None
+
+		super().leaveEvent(a0)
+
 	def mousePressEvent(self, ev: qtgui.QMouseEvent) -> None:
 		"""Срабатывает при нажатии мыши"""
+
+		if ev.button() != qtcore.Qt.MouseButton.LeftButton:
+			return
 
 		self.after_mouse_press_geometry = self.geometry()
 
@@ -225,6 +243,9 @@ class AnimatedLabel(qtw.QLabel):
 	def mouseReleaseEvent(self, ev: qtgui.QMouseEvent) -> None:
 		"""Срабатывает при отпускании мыши"""
 
+		if ev.button() != qtcore.Qt.MouseButton.LeftButton:
+			return
+
 		if not self.after_mouse_press_geometry:
 			return
 
@@ -235,20 +256,6 @@ class AnimatedLabel(qtw.QLabel):
 		self.anim.setEndValue(g)
 		self.anim.setEasingCurve(qtcore.QEasingCurve.Type.OutCubic)
 		self.anim.start()
-
-	def leaveEvent(self, a0):
-		"""Срабатывает, когда мышь уходит с кнопки"""
-
-		if self.normal_geometry:
-			self.anim = qtcore.QPropertyAnimation(self, b"geometry")
-			self.anim.setDuration(150)
-			self.anim.setEndValue(self.normal_geometry)
-			self.anim.setEasingCurve(qtcore.QEasingCurve.Type.OutCubic)
-			self.anim.start()
-
-			self.normal_geometry = None
-
-		super().leaveEvent(a0)
 
 class PlayerProgressBar(qtw.QWidget):
 	def __init__(self) -> None:
@@ -292,9 +299,55 @@ class PlayerProgressBar(qtw.QWidget):
 
 		self.progress.setMaximum(duration)
 
-class PlayerID3Widget(qtw.QWidget):
+class PlayerCoverWidget(AnimatedLabel):
 	clicked_on_cover = qtcore.Signal()
 
+	def __init__(self) -> None:
+		super().__init__()
+
+		self.setObjectName("cover")
+		self.setScaledContents(False)
+
+		self.clicked.connect(self.clicked_on_cover.emit)
+
+		self.orig_pixmap = None
+
+	def _resize(self) -> None:
+		if not self.orig_pixmap:
+			return
+
+		size = self.size()
+
+		print(f"{size=}")
+
+		pixmap = self.orig_pixmap.scaled(
+			size,
+			qtcore.Qt.AspectRatioMode.KeepAspectRatio,
+			qtcore.Qt.TransformationMode.SmoothTransformation,
+		)
+
+		self.setPixmap(pixmap)
+
+	def update_id3(self, id3: dict) -> None:
+		if "cover" in id3:
+			pixmap = qtgui.QPixmap()
+
+			success = pixmap.loadFromData(id3["cover"])
+
+			if success:
+				pixmap = crop_to_square(pixmap)
+				pixmap = round_square(pixmap)
+
+				self.orig_pixmap = pixmap
+
+				self._resize()
+
+	def resizeEvent(self, event: qtgui.QResizeEvent) -> None:
+		super().resizeEvent(event)
+
+		self._resize()
+
+class PlayerID3Widget(qtw.QWidget):
 	def __init__(self, title: str, lead: str) -> None:
 		super().__init__()
 
@@ -310,15 +363,8 @@ class PlayerID3Widget(qtw.QWidget):
 		self.lead.setToolTip("Test")
 		self.lead.setObjectName("lead")
 
-		self.cover = AnimatedLabel()
-		self.cover.setObjectName("cover")
-		self.cover.setScaledContents(True)
-
-		self.cover.clicked.connect(self.clicked_on_cover.emit)
-
 		title_and_lead = qtw.QVBoxLayout()
 		title_and_lead.setSpacing(10)
-		title_and_lead.addWidget(self.cover, alignment=qtcore.Qt.AlignmentFlag.AlignHCenter)
 		title_and_lead.addWidget(self.title, alignment=qtcore.Qt.AlignmentFlag.AlignHCenter)
 		title_and_lead.addWidget(self.lead, alignment=qtcore.Qt.AlignmentFlag.AlignHCenter)
 
@@ -327,23 +373,6 @@ class PlayerID3Widget(qtw.QWidget):
 	def update_id3(self, id3: dict) -> None:
 		self.title.setText(id3["title"])
 		self.lead.setText(' и '.join(id3["lead"]))
-
-		if "cover" in id3:
-			pixmap = qtgui.QPixmap()
-
-			success = pixmap.loadFromData(id3["cover"])
-
-			if success:
-				pixmap = crop_to_square(pixmap)
-				pixmap = round_square(pixmap)
-
-				pixmap = pixmap.scaled(
-					190, 190,
-					qtcore.Qt.AspectRatioMode.KeepAspectRatio,
-					qtcore.Qt.TransformationMode.SmoothTransformation,
-				)
-
-				self.cover.setPixmap(pixmap)
 
 class TableEntryWidget(qtw.QWidget):
 	def __init__(self, key: str, value: str, is_up: bool=False, is_down: bool=False, parent=None) -> None:
@@ -642,15 +671,20 @@ class PlayerWidget(qtw.QWidget):
 		self.control.on_next.connect(self.on_next)
 		self.control.setFixedWidth(250)
 
+		self.cover = PlayerCoverWidget()
+		self.cover.setMinimumSize(190, 190)
+		self.cover.setMaximumSize(200, 200)
+		self.cover.clicked_on_cover.connect(self.clicked_on_cover.emit)
+
 		self.id3_widget = PlayerID3Widget(id3["title"], id3["lead"])
-		self.id3_widget.clicked_on_cover.connect(self.clicked_on_cover.emit)
 
 		self.progress = PlayerProgressBar()
 		self.progress.setFixedWidth(300)
 
 		vert_center = qtw.QVBoxLayout()
-		vert_center.setSpacing(25)
+		vert_center.setSpacing(10)
 		vert_center.addStretch()
+		vert_center.addWidget(self.cover, alignment=qtcore.Qt.AlignmentFlag.AlignHCenter)
 		vert_center.addWidget(self.id3_widget, alignment=qtcore.Qt.AlignmentFlag.AlignHCenter)
 		vert_center.addWidget(self.progress, alignment=qtcore.Qt.AlignmentFlag.AlignHCenter)
 		vert_center.addWidget(self.control, alignment=qtcore.Qt.AlignmentFlag.AlignHCenter)
@@ -671,6 +705,80 @@ class PlayerWidget(qtw.QWidget):
 
 	def update_id3(self, id3: dict) -> None:
 		self.id3_widget.update_id3(id3)
+		self.cover.update_id3(id3)
+
+	def update_interface(self, second: int, duration: int, id3: dict) -> None:
+		self.set_second(second)
+		self.set_duration(duration)
+
+		self.update_id3(id3)
+
+class HPlayerWidget(qtw.QWidget):
+	on_prev = qtcore.Signal()
+	on_play_pause = qtcore.Signal()
+	on_next = qtcore.Signal()
+	clicked_on_cover = qtcore.Signal()
+
+	def __init__(self, work_dir: Path, id3: dict, parent=None) -> None:
+		super().__init__(parent)
+
+		self.control = PlayerControl(work_dir)
+		self.control.on_prev.connect(self.on_prev)
+		self.control.on_play_pause.connect(self.on_play_pause)
+		self.control.on_next.connect(self.on_next)
+		self.control.setFixedWidth(250)
+
+		self.cover = PlayerCoverWidget()
+		self.cover.setMinimumSize(190, 190)
+		self.cover.clicked_on_cover.connect(self.clicked_on_cover.emit)
+
+		self.id3_widget = PlayerID3Widget(id3["title"], id3["lead"])
+		self.id3_widget.setMaximumWidth(200)
+
+		self.progress = PlayerProgressBar()
+
+		info_layout = qtw.QHBoxLayout()
+		info_layout.addWidget(self.cover)
+		info_layout.addWidget(self.id3_widget, alignment=qtcore.Qt.AlignmentFlag.AlignVCenter)
+		info_layout.addStretch()
+
+		id3_widget_layout = qtw.QHBoxLayout()
+		id3_widget_layout.addLayout(info_layout)
+		id3_widget_layout.addWidget(self.control, alignment=qtcore.Qt.AlignmentFlag.AlignBottom)
+		id3_widget_layout.addStretch()
+
+		layout = qtw.QVBoxLayout()
+		layout.setSpacing(10)
+		layout.addStretch()
+		layout.addLayout(id3_widget_layout)
+
+		layout.addWidget(self.progress)
+
+		# qtw.Q
+
+		self.setLayout(layout)
+
+	def resizeEvent(self, event: qtgui.QResizeEvent) -> None:
+		width = event.size().width()
+		self.id3_widget.setMaximumWidth(width // 4)
+
+		super().resizeEvent(event)
+
+	def set_second(self, second: int) -> None:
+		self.progress.set_second(second)
+
+	def set_duration(self, duration: int) -> None:
+		self.progress.set_duration(duration)
+
+	def set_state(self, state: str) -> None:
+		self.control.set_state(state)
+
+	def update_id3(self, id3: dict) -> None:
+		self.id3_widget.update_id3(id3)
+		self.cover.update_id3(id3)
+
+		width = self.size().width()
+		self.id3_widget.setMaximumWidth(width // 4)
 
 	def update_interface(self, second: int, duration: int, id3: dict) -> None:
 		self.set_second(second)
@@ -857,15 +965,13 @@ class AudioPlayerClientGUI(qtw.QMainWindow):
 
 		self.setStyleSheet(Path(work_dir / "style.css").read_text(encoding="UTF-8"))
 
-		self.player_widget = PlayerWidget(work_dir, {
+		self.player_widget = HPlayerWidget(work_dir, {
 			"title": "Connecting...",
 			"lead": None,
 			"cover": None
 		})
 
 		self.player_widget.setObjectName("player_widget")
-
-		# self.player_widget.setFixedWidth(300)
 
 		self.player_widget.on_prev.connect(self.protocol.prev)
 		self.player_widget.on_play_pause.connect(self.protocol.play_pause)

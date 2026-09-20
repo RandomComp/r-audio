@@ -6,6 +6,7 @@ import numpy as np
 
 from mutagen import id3, MutagenError
 
+from listgenerator import ListGenerator
 from playlist import Playlist
 import utils
 
@@ -94,7 +95,7 @@ class AudioFileStream:
 		self.close()
 
 class AudioMixer:
-	def __init__(self, playlist_payback: Playlist, playlist: list[str], sample_rate: int=44100, channels: int=2, chunk_seconds: float=0.1, crossfade_enabled: bool=False, crossfade_dur: float=5):
+	def __init__(self, playlist_payback: Playlist, playlist: ListGenerator, sample_rate: int=44100, channels: int=2, chunk_seconds: float=0.1, crossfade_enabled: bool=False, crossfade_dur: float=5):
 		self.playlist_payback = playlist_payback
 		self.playlist = playlist
 
@@ -202,8 +203,8 @@ class AudioMixer:
 
 		self.track_switching += 1
 
-		if self.track_id >= len(self.playlist):
-			raise StopIteration
+		# if self.track_id >= len(self.playlist):
+		# 	raise StopIteration
 
 		self._cur_second = 0
 
@@ -300,7 +301,7 @@ class AudioMixer:
 
 				self._old_stream = None
 
-			if self._cur_second >= (self.duration - half_crossfade_dur) and not self._is_last():
+			if self._cur_second >= (self.duration - half_crossfade_dur):
 				self.next()
 
 		if self.previoused and self._cur_second >= (self.duration * 0.5):

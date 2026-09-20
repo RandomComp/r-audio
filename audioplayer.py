@@ -8,6 +8,7 @@ import audiostream
 
 from audioloader import AudioMixer
 
+from listgenerator import ListGenerator
 from playlist import Playlist
 
 import tui
@@ -109,7 +110,7 @@ class AudioPlayer:
 
 		self.sound_cur_chunk = None
 
-		self.playlist: list[str] = []
+		self.playlist: ListGenerator | None = None
 
 		self.id3_info = None
 
@@ -137,7 +138,7 @@ class AudioPlayer:
 
 		# self.
 
-		# TODO: генерировать ID для всех клиентов
+		# TODO: генерировать ID для всех клиентов и отмасштабировать обложку перед отправкой
 
 	def __output(self, *values: object, sep: str=" ", end: str="\n") -> None:
 		string = f"{sep.join(map(str, values))}{end}"
@@ -356,17 +357,52 @@ class AudioPlayer:
 			result = []
 
 			for file in self.playlist_payback.db:
-				if file[category] != key:
-					continue
+				temp = []
 
-				result.append(file[category])
+				for arg_fields in argv[4:]:
+					db_file = self.playlist_payback.db[file]
+
+					if category not in db_file:
+						continue
+
+					if isinstance(db_file[category], list):
+						if key not in db_file[category]:
+							continue
+
+					elif db_file[category] != key:
+						continue
+
+					cur = {}
+
+					item = db_file
+
+					fields = arg_fields.split(".")
+
+					for i in range(len(fields) - 1):
+						field = fields[i]
+
+						item = item[field]
+
+						if field not in cur:
+							cur[field] = {}
+
+						cur = cur[field]
+
+					print(f"{item=}")
+
+					cur[fields[-1]] = item[fields[-1]]
+
+					temp.append(cur)
+
+				if temp:
+					result.append(temp)
 
 			result = json.dumps(result, ensure_ascii=False, cls=BytesEncoder)
 
 			return "OK", result
 
 		elif argv[1] == "set":
-			if len(argv) <= 3:
+			if len(argv) <= 4:
 				return "ERROR", "Expected key and value for 'set' subcommand of 'db'"
 
 			fields = argv[2].split(".")
@@ -382,6 +418,8 @@ class AudioPlayer:
 				pointer = pointer[field]
 
 			pointer[end_field] = argv[3]
+		else:
+			return "ERROR", f"Unknown {argv[1]} subcommand of 'db'"
 
 		return "OK", ""
 
@@ -518,11 +556,11 @@ class AudioPlayer:
 		self.something_changed.set()
 
 	def load(self, playlist_payback: Playlist) -> None:
-		playlist = playlist_payback.gen()
+		playlist = ListGenerator(playlist_payback.gen())
 
 		self.playlist_payback = playlist_payback
 
-		self.playlist.extend(playlist)
+		self.playlist = playlist
 
 		result = AudioMixer(playlist_payback, playlist, self.sample_rate, self.channels, self.chunk_seconds, self.config["audio"]["crossfade"], self.config["audio"]["crossfade_time_s"])
 

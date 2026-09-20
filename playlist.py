@@ -38,8 +38,6 @@ class Playlist:
 		self.db_name = "r-audio-db.json"
 		self.db_dir = (dir / self.db_name)
 
-		self.files = []
-
 		self.db = {}
 
 		if self.db_dir.is_file():
@@ -49,7 +47,10 @@ class Playlist:
 
 		self.update_db(dir)
 
-		self.recommended = list(self.db.keys())
+		self.db_files = list(self.db.keys())
+		self.recommended = []
+
+		self._recommended_index = 0
 
 	def update_db(self, dir: Path) -> None:
 		for file in dir.rglob("*.mp3"):
@@ -168,6 +169,27 @@ class Playlist:
 		if file not in self.db:
 			self.add_file_to_db(file)
 
+		leads = tuple(self.db[file]["lead"])
+		lead_rate = {}
+
+		lead_rate[leads] = time
+
+		recommended = self.recommended[:self._recommended_index]
+
+		for cur_file in recommended:
+			file_leads = tuple(self.db[cur_file]["lead"])
+
+			if all(lead in file_leads for lead in leads):
+				continue
+
+			# TODO: fix
+
+			lead_rate[file_leads] = 0
+
+		recommended = self.sort(recommended)
+		recommended = sorted(recommended, key=lambda x: lead_rate[tuple(self.db[x]["lead"])], reverse=True)
+		self.recommended[:self._recommended_index] = recommended
+
 		cur_time_of_day = self.get_cur_time_of_day()
 
 		rate = self.db[file][cur_time_of_day]["rate"]
@@ -191,34 +213,42 @@ class Playlist:
 		self.db[file][cur_time_of_day]["rate"] = rate + time
 
 	def appendleft(self, playlist: list[str]) -> None:
-		self.files.extend(playlist)
+		self.recommended[0:0] = playlist
 
-	def gen(self) -> list[str]:
-		shuffle(self.recommended)
-
-		result = self.files
-
-		for file in self.recommended[:200]:
-			if file not in result:
-				result.append(file)
-
+	def sort(self, files: list[str]) -> list[str]:
 		cur_time_of_day = self.get_cur_time_of_day()
 
-		leads = [self.db[file]["lead"] for file in result]
-		genres = [self.db[file]["genre"] for file in result]
-		albums = [self.db[file]["album"] for file in result]
-		years = [self.db[file]["year"] for file in result]
+		leads = [self.db[file]["lead"] for file in files]
+		genres = [self.db[file]["genre"] for file in files]
+		albums = [self.db[file]["album"] for file in files]
+		years = [self.db[file]["year"] for file in files]
 
-		result = sorted(result, key=lambda x: albums.index(self.db[x]["album"]))
+		result = sorted(files, key=lambda x: albums.index(self.db[x]["album"]))
 		result = sorted(result, key=lambda x: leads.index(self.db[x]["lead"]))
 		result = sorted(result, key=lambda x: genres.index(self.db[x]["genre"]))
 		result = sorted(result, key=lambda x: years.index(self.db[x]["year"]))
 
-		result = sorted(result, key=lambda x: self.db[x][cur_time_of_day]["listen_times"])
-
 		result = sorted(result, key=lambda x: self.db[x][cur_time_of_day]["rate"], reverse=True)
 
+		result = sorted(result, key=lambda x: self.db[x][cur_time_of_day]["listen_times"])
+
 		return result
+
+	def gen(self):
+		self.recommended = (self.db_files[:200]).copy()
+
+		shuffle(self.recommended)
+
+		self.recommended = self.sort(self.recommended)
+
+		self._recommended_index = 0
+
+		while True:
+			print(f"{self._recommended_index=}")
+
+			yield self.recommended[self._recommended_index]
+
+			self._recommended_index += 1
 
 	def __del__(self) -> None:
 		self.save_db()
