@@ -24,3 +24,11 @@ video_test.py
 test_img_show.py
 test2.py
 audioplayer_dbus.py
+get_text.py
+monitor.py
+pause-to-play.svg
+pause123-start.svg
+play-to-pause.svg
+player_gui.py
+test_client.py
+test_server.py

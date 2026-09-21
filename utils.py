@@ -14,6 +14,52 @@ from listgenerator import ListGenerator
 
 import numpy as np
 
+# =================================== DB FUNCTION ===================================
+def query(where: dict, category: str, key: str, values: list[str]) -> list[dict]:
+	result = []
+
+	for file in where.items():
+		db_file = where[file]
+
+		if category not in db_file:
+			continue
+
+		if isinstance(db_file[category], list):
+			if key not in db_file[category]:
+				continue
+		elif db_file[category] != key:
+			continue
+
+		temp = []
+
+		for arg_fields in values:
+			cur = {}
+
+			item = db_file
+
+			fields = arg_fields.split(".")
+
+			for i in range(len(fields) - 1):
+				field = fields[i]
+
+				item = item[field]
+
+				if field not in cur:
+					cur[field] = {}
+
+				cur = cur[field]
+
+			cur[fields[-1]] = item[fields[-1]]
+
+			temp.append(cur)
+
+		if temp:
+			result.append(temp)
+
+	return result
+
+# ===================================================================================
+
 def ansi_len(ansi_str: str) -> int:
 	ch_len = builtins.len(ansi_str)
 

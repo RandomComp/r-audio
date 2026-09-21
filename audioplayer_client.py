@@ -160,7 +160,14 @@ class AudioPlayerClient:
 	async def _read_answer(self, reader: asyncio.StreamReader) -> tuple[str, str, str]:
 		response = await self.read_text(reader)
 
-		state, command, msg = response.split("|", maxsplit=2)
+		response = response.split("|", maxsplit=2)
+
+		if len(response) <= 2:
+			print(f"Server returned an invalid response {response}.")
+
+			return "ERROR", "", f"Server returned an invalid response {response}."
+
+		state, command, msg = response
 
 		return state, command, msg
 

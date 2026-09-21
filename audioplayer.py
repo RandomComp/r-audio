@@ -260,7 +260,7 @@ class AudioPlayer:
 		text = ""
 
 		try:
-			text = json.dumps(self.id3_info, ensure_ascii=False, cls=BytesEncoder)
+			text = json.dumps(self.id3_info, ensure_ascii=False)
 		except Exception as e:
 			traceback.print_exc()
 
@@ -338,6 +338,17 @@ class AudioPlayer:
 
 	async def do_get_info(self, argv: list[str]) -> tuple[str, str]:
 		return "OK", self.get_info(argv[1:])
+
+	async def do_get_cover(self, argv: list[str]) -> tuple[str, str]:
+		if len(argv) <= 2:
+			return "ERROR", "Expected id from db and size"
+
+		id = int(argv[1])
+		size = int(argv[2])
+
+		load_cover
+
+		return "OK", ""
 
 	async def do_db(self, argv: list[str]) -> tuple[str, str]:
 		if len(argv) <= 1:
@@ -544,14 +555,11 @@ class AudioPlayer:
 	def _load_id3(self) -> None:
 		track = self.playlist[self.track_id]
 
-		track_db = self.playlist_payback.db[track]
+		track_db = self.playlist_payback.db["files"][track]
 
-		keys = ["genre", "title", "lead", "album", "cover", "year"]
+		keys = ["genre", "title", "lead", "album", "year"]
 
 		self.id3_info = {key: track_db[key] for key in keys}
-
-		cover_path = self.id3_info["cover"]
-		self.id3_info["cover"] = Path(cover_path).read_bytes()
 
 		self.something_changed.set()
 

@@ -299,16 +299,11 @@ class PlayerProgressBar(qtw.QWidget):
 
 		self.progress.setMaximum(duration)
 
-class PlayerCoverWidget(AnimatedLabel):
-	clicked_on_cover = qtcore.Signal()
+class ScalableCoverWidget(qtw.QLabel):
+	def __init__(self, parent=None) -> None:
+		super().__init__(parent)
 
-	def __init__(self) -> None:
-		super().__init__()
-
-		self.setObjectName("cover")
 		self.setScaledContents(False)
-
-		self.clicked.connect(self.clicked_on_cover.emit)
 
 		self.orig_pixmap = None
 
@@ -318,8 +313,6 @@ class PlayerCoverWidget(AnimatedLabel):
 
 		size = self.size()
 
-		print(f"{size=}")
-
 		pixmap = self.orig_pixmap.scaled(
 			size,
 			qtcore.Qt.AspectRatioMode.KeepAspectRatio,
@@ -328,27 +321,30 @@ class PlayerCoverWidget(AnimatedLabel):
 
 		self.setPixmap(pixmap)
 
-	def update_id3(self, id3: dict) -> None:
-		if "cover" in id3:
-			pixmap = qtgui.QPixmap()
+	def update_cover(self, cover: bytes) -> None:
+		pixmap = qtgui.QPixmap()
 
-			success = pixmap.loadFromData(id3["cover"])
+		success = pixmap.loadFromData(cover)
 
-			if success:
-				pixmap = crop_to_square(pixmap)
-				pixmap = round_square(pixmap)
+		if success:
+			pixmap = crop_to_square(pixmap)
+			pixmap = round_square(pixmap)
 
-				self.orig_pixmap = pixmap
+			self.orig_pixmap = pixmap
 
-				self._resize()
+			self._resize()
 
 	def resizeEvent(self, event: qtgui.QResizeEvent) -> None:
 		super().resizeEvent(event)
 
 		self._resize()
 
+class PlayerCoverWidget(AnimatedLabel, ScalableCoverWidget):
+	def __init__(self, parent=None) -> None:
+		super().__init__(parent)
+
 class PlayerID3Widget(qtw.QWidget):
-	def __init__(self, title: str, lead: str) -> None:
+	def __init__(self, title: str, lead: str, orientation: qtcore.Qt.AlignmentFlag = qtcore.Qt.AlignmentFlag.AlignHCenter) -> None:
 		super().__init__()
 
 		self.title = MarqueeLabel(title)
@@ -365,8 +361,8 @@ class PlayerID3Widget(qtw.QWidget):
 
 		title_and_lead = qtw.QVBoxLayout()
 		title_and_lead.setSpacing(10)
-		title_and_lead.addWidget(self.title, alignment=qtcore.Qt.AlignmentFlag.AlignHCenter)
-		title_and_lead.addWidget(self.lead, alignment=qtcore.Qt.AlignmentFlag.AlignHCenter)
+		title_and_lead.addWidget(self.title, alignment=orientation)
+		title_and_lead.addWidget(self.lead, alignment=orientation)
 
 		self.setLayout(title_and_lead)
 
@@ -445,9 +441,8 @@ class HPlayerID3Widget(qtw.QWidget):
 		self.lead.setToolTip("Test")
 		self.lead.setObjectName("h_lead")
 
-		self.cover = qtw.QLabel()
-		self.cover.setObjectName("h_cover")
-		self.cover.setScaledContents(False)
+		self.cover = ScalableCoverWidget()
+		self.cover.setMinimumSize(100, 100)
 
 		title_and_lead_layout = qtw.QVBoxLayout()
 		title_and_lead_layout.setSpacing(10)
@@ -488,22 +483,8 @@ class HPlayerID3Widget(qtw.QWidget):
 
 			self.lead.setText(id3["lead"])
 
-		if "cover" in id3 and id3["cover"] is not None:
-			pixmap = qtgui.QPixmap()
-
-			success = pixmap.loadFromData(id3["cover"])
-
-			if success:
-				pixmap = crop_to_square(pixmap)
-				pixmap = round_square(pixmap)
-
-				pixmap = pixmap.scaled(
-					100, 100,
-					qtcore.Qt.AspectRatioMode.KeepAspectRatio,
-					qtcore.Qt.TransformationMode.SmoothTransformation,
-				)
-
-				self.cover.setPixmap(pixmap)
+		if "cover" in id3:
+			self.cover.update_cover(id3["cover"])
 
 		for key in self.keys:
 			if key not in id3:
@@ -674,7 +655,7 @@ class PlayerWidget(qtw.QWidget):
 		self.cover = PlayerCoverWidget()
 		self.cover.setMinimumSize(190, 190)
 		self.cover.setMaximumSize(200, 200)
-		self.cover.clicked_on_cover.connect(self.clicked_on_cover.emit)
+		self.cover.clicked.connect(self.clicked_on_cover.emit)
 
 		self.id3_widget = PlayerID3Widget(id3["title"], id3["lead"])
 
@@ -705,13 +686,32 @@ class PlayerWidget(qtw.QWidget):
 
 	def update_id3(self, id3: dict) -> None:
 		self.id3_widget.update_id3(id3)
-		self.cover.update_id3(id3)
+
+		if "cover" in id3:
+			self.cover.update_cover(id3["cover"])
 
 	def update_interface(self, second: int, duration: int, id3: dict) -> None:
 		self.set_second(second)
 		self.set_duration(duration)
 
 		self.update_id3(id3)
+
+class HBoxLayoutWidget(qtw.QWidget):
+	clicked = qtcore.Signal()
+
+	def __init__(self, parent=None) -> None:
+		super().__init__()
+
+		self.widget_layout = qtw.QHBoxLayout()
+
+		self.setLayout(self.widget_layout)
+
+	def addWidget(self, widget: qtw.QWidget):
+		self.widget_layout.addWidget(widget)
+
+	def addLayout(self, layout: qtw.QLayout):
+		self.widget_layout.addLayout(layout)
+
 
 class HPlayerWidget(qtw.QWidget):
 	on_prev = qtcore.Signal()
@@ -728,17 +728,22 @@ class HPlayerWidget(qtw.QWidget):
 		self.control.on_next.connect(self.on_next)
 		self.control.setFixedWidth(250)
 
+		cover_box = HBoxLayoutWidget()
+
 		self.cover = PlayerCoverWidget()
 		self.cover.setMinimumSize(190, 190)
-		self.cover.clicked_on_cover.connect(self.clicked_on_cover.emit)
+		self.cover.setMaximumSize(200, 200)
+		self.cover.clicked.connect(self.clicked_on_cover.emit)
 
-		self.id3_widget = PlayerID3Widget(id3["title"], id3["lead"])
+		cover_box.addWidget(self.cover)
+
+		self.id3_widget = PlayerID3Widget(id3["title"], id3["lead"], orientation=qtcore.Qt.AlignmentFlag.AlignLeft)
 		self.id3_widget.setMaximumWidth(200)
 
 		self.progress = PlayerProgressBar()
 
 		info_layout = qtw.QHBoxLayout()
-		info_layout.addWidget(self.cover)
+		info_layout.addWidget(cover_box)
 		info_layout.addWidget(self.id3_widget, alignment=qtcore.Qt.AlignmentFlag.AlignVCenter)
 		info_layout.addStretch()
 
@@ -775,7 +780,9 @@ class HPlayerWidget(qtw.QWidget):
 
 	def update_id3(self, id3: dict) -> None:
 		self.id3_widget.update_id3(id3)
-		self.cover.update_id3(id3)
+
+		if "cover" in id3:
+			self.cover.update_cover(id3["cover"])
 
 		width = self.size().width()
 		self.id3_widget.setMaximumWidth(width // 4)

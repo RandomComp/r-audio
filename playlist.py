@@ -47,10 +47,21 @@ class Playlist:
 
 		self.update_db(dir)
 
-		self.db_files = list(self.db.keys())
+		self.db_files = list(self.db["files"].keys())
 		self.recommended = []
 
 		self._recommended_index = 0
+
+		self.leads_rate = {}
+
+		for file in self.db_files:
+			file_db = self.get_file(file)
+
+			print(f"{file_db=}")
+
+			leads = tuple(file_db["lead"])
+
+			self.leads_rate[leads] = 0
 
 	def update_db(self, dir: Path) -> None:
 		for file in dir.rglob("*.mp3"):
@@ -69,7 +80,7 @@ class Playlist:
 		self.db_dir.write_text(json_str, encoding="UTF-8")
 
 	def load_id3(self, file: str) -> dict:
-		"""Returns dict of Genre Name, Title, Lead, Album, Album Cover, Record time"""
+		"""Returns dict of Genre Name, Title, Lead, Album, Record time"""
 
 		result: dict = {}
 
@@ -109,17 +120,26 @@ class Playlist:
 
 		return result
 
-	def load_cover(self, file: str) -> bytes:
-		if file not in self.db:
+	def file_in_db(self, file: str) -> bool:
+		return file in self.db["files"] if "files" in self.db else False
+
+	def get_file(self, file: str) -> dict:
+		if not self.file_in_db(file):
 			self.add_file_to_db(file)
 
-		return Path(self.db[file]["cover"]).read_bytes()
+		return self.db["files"][file]
+
+	def load_cover(self, file: str) -> bytes:
+		return Path(self.get_file(file)["cover"]).read_bytes()
 
 	def add_file_to_db(self, file: str) -> None:
-		if file in self.db:
+		if self.file_in_db(file):
 			return
 
-		self.db[file] = {
+		if "files" not in self.db:
+			self.db["files"] = {}
+
+		self.db["files"][file] = {
 			"morning": {
 				"rate": 0.0,
 				"listen_times": 0,
@@ -140,8 +160,13 @@ class Playlist:
 
 		id3 = self.load_id3(file)
 
+		self.db["files"][file]["lead"] = []
+
 		if "lead" in id3 and id3["lead"] is not None:
-			self.db[file]["lead"] = [lead.strip() for lead in id3["lead"].split(",")]
+			leads = id3["lead"]
+			leads = [lead.strip() for lead in leads.split(",")]
+
+			self.db["files"][file]["lead"] = leads
 
 		keys = ["genre", "title", "album", "cover", "year", "text"]
 
@@ -149,7 +174,7 @@ class Playlist:
 			if key not in id3:
 				continue
 
-			self.db[file][key] = id3[key]
+			self.db["files"][file][key] = id3[key]
 
 	def get_cur_time_of_day(self) -> str:
 		hour = datetime.now().hour
@@ -166,41 +191,32 @@ class Playlist:
 		return "day"
 
 	def add_avg_listen_time(self, file: str, time: float) -> None:
-		if file not in self.db:
-			self.add_file_to_db(file)
+		file_db = self.get_file(file)
 
-		leads = tuple(self.db[file]["lead"])
-		lead_rate = {}
+		leads = tuple(file_db["lead"])
 
-		lead_rate[leads] = time
+		recommended = self.recommended[self._recommended_index:]
 
-		recommended = self.recommended[:self._recommended_index]
-
-		for cur_file in recommended:
-			file_leads = tuple(self.db[cur_file]["lead"])
-
-			if all(lead in file_leads for lead in leads):
-				continue
-
-			# TODO: fix
-
-			lead_rate[file_leads] = 0
+		if self.leads_rate[leads] > 0.0:
+			self.leads_rate[leads] = (self.leads_rate[leads] * 0.7) + (time * 0.3)
+		else:
+			self.leads_rate[leads] = time
 
 		recommended = self.sort(recommended)
-		recommended = sorted(recommended, key=lambda x: lead_rate[tuple(self.db[x]["lead"])], reverse=True)
-		self.recommended[:self._recommended_index] = recommended
+		recommended = sorted(recommended, key=lambda x: self.leads_rate[tuple(self.get_file(x)["lead"])], reverse=True)
+		self.recommended[self._recommended_index:] = recommended
 
 		cur_time_of_day = self.get_cur_time_of_day()
 
-		rate = self.db[file][cur_time_of_day]["rate"]
-		listen_times = self.db[file][cur_time_of_day]["listen_times"]
+		rate = file_db[cur_time_of_day]["rate"]
+		listen_times = file_db[cur_time_of_day]["listen_times"]
 
 		if listen_times == 0:
-			self.db[file][cur_time_of_day]["rate"] = time
+			file_db[cur_time_of_day]["rate"] = time
 		else:
-			self.db[file][cur_time_of_day]["rate"] = (rate + time) * 0.5
+			file_db[cur_time_of_day]["rate"] = (rate + time) * 0.5
 
-		self.db[file][cur_time_of_day]["listen_times"] += 1
+		file_db[cur_time_of_day]["listen_times"] += 1
 
 	def add_pure_listen_time(self, file: str, time: float) -> None:
 		if file not in self.db:
@@ -208,9 +224,9 @@ class Playlist:
 
 		cur_time_of_day = self.get_cur_time_of_day()
 
-		rate = self.db[file][cur_time_of_day]["rate"]
+		rate = self.db["files"][file][cur_time_of_day]["rate"]
 
-		self.db[file][cur_time_of_day]["rate"] = rate + time
+		self.db["files"][file][cur_time_of_day]["rate"] = rate + time
 
 	def appendleft(self, playlist: list[str]) -> None:
 		self.recommended[0:0] = playlist
@@ -218,19 +234,38 @@ class Playlist:
 	def sort(self, files: list[str]) -> list[str]:
 		cur_time_of_day = self.get_cur_time_of_day()
 
-		leads = [self.db[file]["lead"] for file in files]
-		genres = [self.db[file]["genre"] for file in files]
-		albums = [self.db[file]["album"] for file in files]
-		years = [self.db[file]["year"] for file in files]
+		leads = []
+		genres = []
+		albums = []
+		years = []
 
-		result = sorted(files, key=lambda x: albums.index(self.db[x]["album"]))
-		result = sorted(result, key=lambda x: leads.index(self.db[x]["lead"]))
-		result = sorted(result, key=lambda x: genres.index(self.db[x]["genre"]))
-		result = sorted(result, key=lambda x: years.index(self.db[x]["year"]))
+		for file in files:
+			file_db = self.get_file(file)
 
-		result = sorted(result, key=lambda x: self.db[x][cur_time_of_day]["rate"], reverse=True)
+			lead = file_db["lead"]
+			if lead not in leads:
+				leads.append(lead)
 
-		result = sorted(result, key=lambda x: self.db[x][cur_time_of_day]["listen_times"])
+			genre = file_db["genre"]
+			if genre not in genres:
+				genres.append(genre)
+
+			album = file_db["album"]
+			if album not in albums:
+				albums.append(album)
+
+			year = file_db["year"]
+			if year not in years:
+				years.append(year)
+
+		result = sorted(files, key=lambda x: albums.index(self.get_file(x)["album"]))
+		result = sorted(result, key=lambda x: leads.index(self.get_file(x)["lead"]))
+		result = sorted(result, key=lambda x: genres.index(self.get_file(x)["genre"]))
+		result = sorted(result, key=lambda x: years.index(self.get_file(x)["year"]))
+
+		result = sorted(result, key=lambda x: self.get_file(x)[cur_time_of_day]["rate"], reverse=True)
+
+		result = sorted(result, key=lambda x: self.get_file(x)[cur_time_of_day]["listen_times"])
 
 		return result
 
