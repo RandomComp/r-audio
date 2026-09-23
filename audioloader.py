@@ -106,12 +106,12 @@ class AudioMixer:
 
 		self._track_switching = 0
 
-		self.track_id = 0
+		self.playlist_track_id = 0
 
-		self.old_track_id = 0
+		self.old_playlist_track_id = 0
 		self.previoused = False
 
-		self._stream: AudioFileStream = AudioFileStream(self.playlist[self.track_id], sample_rate, channels, chunk_seconds)
+		self._stream: AudioFileStream = AudioFileStream(self.playlist[self.playlist_track_id], sample_rate, channels, chunk_seconds)
 		self._old_stream: AudioFileStream | None = None
 
 		self._stream_volume = 1.0
@@ -167,7 +167,7 @@ class AudioMixer:
 
 		elif val == 0:
 			self._stream.close()
-			self._stream = AudioFileStream(self.playlist[self.track_id], self.sample_rate, self.channels, self.chunk_seconds)
+			self._stream = AudioFileStream(self.playlist[self.playlist_track_id], self.sample_rate, self.channels, self.chunk_seconds)
 			self._cur_second = 0
 
 		elif self._cur_second > val:
@@ -197,13 +197,13 @@ class AudioMixer:
 	def next(self) -> None:
 		duration = self.duration - (self.crossfade_dur / 2) if self.crossfade else self.duration
 
-		self.playlist_payback.add_avg_listen_time(self.playlist[self.track_id], self._cur_second / duration)
+		self.playlist_payback.add_avg_listen_time(self.playlist[self.playlist_track_id], self._cur_second, duration)
 
-		self.track_id += 1
+		self.playlist_track_id += 1
 
 		self.track_switching += 1
 
-		# if self.track_id >= len(self.playlist):
+		# if self.playlist_track_id >= len(self.playlist):
 		# 	raise StopIteration
 
 		self._cur_second = 0
@@ -213,15 +213,15 @@ class AudioMixer:
 		else:
 			self._stream.close()
 
-		self._stream = AudioFileStream(self.playlist[self.track_id], self.sample_rate, self.channels, self.chunk_seconds)
+		self._stream = AudioFileStream(self.playlist[self.playlist_track_id], self.sample_rate, self.channels, self.chunk_seconds)
 
 		if self.on_id3_update:
 			self.on_id3_update()
 
 	def prev(self) -> None:
-		self.old_track_id = self.track_id
-		self.track_id = max(0, self.track_id - 1)
-		self.previoused = self.track_id != self.old_track_id
+		self.old_playlist_track_id = self.playlist_track_id
+		self.playlist_track_id = max(0, self.playlist_track_id - 1)
+		self.previoused = self.playlist_track_id != self.old_playlist_track_id
 
 		self.track_switching += 1
 
@@ -232,7 +232,7 @@ class AudioMixer:
 		else:
 			self._stream.close()
 
-		self._stream = AudioFileStream(self.playlist[self.track_id], self.sample_rate, self.channels, self.chunk_seconds)
+		self._stream = AudioFileStream(self.playlist[self.playlist_track_id], self.sample_rate, self.channels, self.chunk_seconds)
 
 		if self.on_id3_update:
 			self.on_id3_update()
@@ -283,9 +283,6 @@ class AudioMixer:
 
 		# ===========================================================================
 
-	def _is_last(self) -> bool:
-		return self.track_id == (len(self.playlist) - 1)
-
 	def __next__(self) -> tuple[float, np.ndarray]:
 		if self._stream is None:
 			raise RuntimeError("Not AudioLoader stream")
@@ -305,7 +302,7 @@ class AudioMixer:
 				self.next()
 
 		if self.previoused and self._cur_second >= (self.duration * 0.5):
-			self.playlist_payback.add_pure_listen_time(self.playlist[self.old_track_id], 0.1)
+			self.playlist_payback.add_pure_listen_time(self.playlist[self.old_playlist_track_id], 0.1)
 
 		self.read_chunk()
 

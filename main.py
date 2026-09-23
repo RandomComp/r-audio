@@ -183,8 +183,10 @@ class AudioPlayerApp:
 
 		player = None
 
+		work_dir = Path().home() / "Music"
+
 		try:
-			playlist = Playlist()
+			playlist = Playlist(work_dir)
 
 			player = AudioPlayer(config=config, translator=self.translator)
 

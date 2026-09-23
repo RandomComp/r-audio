@@ -9,6 +9,8 @@ from datetime import datetime
 
 import utils
 
+import syncedlyrics
+
 # from audioloader import AudioFileStream
 
 # import numpy as np
@@ -31,11 +33,9 @@ import utils
 # 	return result
 
 class Playlist:
-	def __init__(self, dir: Path | None=None):
-		if not dir:
-			dir = Path().home() / "Music"
-
+	def __init__(self, dir: Path):
 		self.db_name = "r-audio-db.json"
+		self.work_dir = dir
 		self.db_dir = (dir / self.db_name)
 
 		self.db = {}
@@ -57,9 +57,15 @@ class Playlist:
 		for file in self.db_files:
 			file_db = self.get_file(file)
 
-			print(f"{file_db=}")
+			if "lead" not in file_db:
+				print(f"Not found lead for {file}")
+
+				continue
 
 			leads = tuple(file_db["lead"])
+
+			if leads in self.leads_rate:
+				continue
 
 			self.leads_rate[leads] = 0
 
@@ -79,15 +85,60 @@ class Playlist:
 
 		self.db_dir.write_text(json_str, encoding="UTF-8")
 
+	def _save_lyrics(self, lrc_file: Path, id3: dict) -> str:
+		search_query = f"{id3["lead"]} -- {id3["title"]}"
+
+		if lrc_file.is_file():
+			c = ""
+
+			with open(lrc_file, "r") as f:
+				c = f.read(1)
+
+			if c == '[':
+				result = "synced"
+			else:
+				result = "unsynced"
+
+			print(f"{result.capitalize()} lyric for '{search_query}' already downloaded")
+
+			return result
+
+		result = "not found"
+
+		lrc_text = syncedlyrics.search(search_query)
+		if lrc_text:
+			if lrc_text.startswith('['):
+				print(f"Founded synced lyric for {search_query}")
+
+				result = "synced"
+			else:
+				print(f"Founded unsynced lyric for {search_query}")
+
+				result = "unsynced"
+
+			lrc_file.write_text(lrc_text)
+		else:
+			print(f"No lyric for {search_query}")
+
+		return result
+
 	def load_id3(self, file: str) -> dict:
-		"""Returns dict of Genre Name, Title, Lead, Album, Record time"""
+		"""Returns dict of Genre Name, Title, Lead, Album, Record time, Cover path, Text path (in .lrc file, from syncedlyrics)"""
+
+		lrc_file = (self.work_dir / f"{Path(file).stem}.lrc").resolve()
 
 		result: dict = {}
+
+		result["text"] = str(lrc_file)
+		result["text_status"] = ""
 
 		try:
 			id = id3.Open(file)
 		except MutagenError:
 			result["lead"], result["title"] = utils.parse_music_file_name(file)
+
+			status = self._save_lyrics(lrc_file, result)
+			result["text_status"] = status
 
 			return result
 
@@ -103,7 +154,20 @@ class Playlist:
 			else:
 				result[new_key] = str(value)
 
-		cover = (Path().home() / ".cache" / f"{Path(file).stem}.png").resolve()
+		file_name_lead, file_name_title = utils.parse_music_file_name(file)
+
+		if result["lead"] == None:
+			result["lead"] = file_name_lead
+
+		if result["title"] == None:
+			result["title"] = file_name_title
+
+		cover_dir = Path().home() / ".cache" / "r-audio-server-covers"
+
+		if not cover_dir.is_dir():
+			cover_dir.mkdir()
+
+		cover = (cover_dir / f"{Path(file).stem}.png").resolve()
 
 		for item in id.items():
 			if "APIC" not in item[0]:
@@ -115,8 +179,10 @@ class Playlist:
 
 			break
 
+		status = self._save_lyrics(lrc_file, result)
+		result["text_status"] = status
+
 		result["cover"] = str(cover)
-		result["text"] = str((self.db_dir / f"{Path(file).stem}.lrc").resolve())
 
 		return result
 
@@ -156,25 +222,21 @@ class Playlist:
 				"rate": 0.0,
 				"listen_times": 0,
 			},
+			"id": str(len(self.db["files"])),
 		}
 
 		id3 = self.load_id3(file)
 
 		self.db["files"][file]["lead"] = []
 
+		for key, value in zip(id3.keys(), id3.values()):
+			self.db["files"][file][key] = value
+
 		if "lead" in id3 and id3["lead"] is not None:
 			leads = id3["lead"]
 			leads = [lead.strip() for lead in leads.split(",")]
 
 			self.db["files"][file]["lead"] = leads
-
-		keys = ["genre", "title", "album", "cover", "year", "text"]
-
-		for key in keys:
-			if key not in id3:
-				continue
-
-			self.db["files"][file][key] = id3[key]
 
 	def get_cur_time_of_day(self) -> str:
 		hour = datetime.now().hour
@@ -190,21 +252,48 @@ class Playlist:
 
 		return "day"
 
-	def add_avg_listen_time(self, file: str, time: float) -> None:
+	def add_avg_listen_time(self, file: str, time_second: float, duration: float) -> None:
 		file_db = self.get_file(file)
 
 		leads = tuple(file_db["lead"])
 
-		recommended = self.recommended[self._recommended_index:]
+		time = time_second / duration
 
-		if self.leads_rate[leads] > 0.0:
-			self.leads_rate[leads] = (self.leads_rate[leads] * 0.7) + (time * 0.3)
-		else:
-			self.leads_rate[leads] = time
+		if time_second >= 8:
+			recommended = self.recommended[self._recommended_index:]
 
-		recommended = self.sort(recommended)
-		recommended = sorted(recommended, key=lambda x: self.leads_rate[tuple(self.get_file(x)["lead"])], reverse=True)
-		self.recommended[self._recommended_index:] = recommended
+			if self.leads_rate[leads] > 0.0:
+				self.leads_rate[leads] = (self.leads_rate[leads] * 0.6) + (time * 0.4)
+			else:
+				self.leads_rate[leads] = time
+
+			recommended = sorted(recommended, key=lambda x: self.leads_rate[tuple(self.get_file(x)["lead"])], reverse=True)
+			cur_time_of_day = self.get_cur_time_of_day()
+
+			genres = []
+			albums = []
+			years = []
+
+			for recommended_file in recommended:
+				file_db = self.get_file(recommended_file)
+
+				genre = file_db["genre"]
+				if genre not in genres:
+					genres.append(genre)
+
+				album = file_db["album"]
+				if album not in albums:
+					albums.append(album)
+
+				year = file_db["year"]
+				if year not in years:
+					years.append(year)
+
+			recommended = sorted(recommended, key=lambda x: albums.index(self.get_file(x)["album"]))
+			recommended = sorted(recommended, key=lambda x: genres.index(self.get_file(x)["genre"]))
+			recommended = sorted(recommended, key=lambda x: years.index(self.get_file(x)["year"]))
+
+			self.recommended[self._recommended_index:] = recommended
 
 		cur_time_of_day = self.get_cur_time_of_day()
 
@@ -270,10 +359,11 @@ class Playlist:
 		return result
 
 	def gen(self):
-		self.recommended = (self.db_files[:200]).copy()
+		db_files = self.db_files.copy()
 
-		shuffle(self.recommended)
+		shuffle(db_files)
 
+		self.recommended = db_files[:200]
 		self.recommended = self.sort(self.recommended)
 
 		self._recommended_index = 0

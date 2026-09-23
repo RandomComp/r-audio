@@ -21,7 +21,7 @@ class EventEmitter:
 
 		self.silent = silent
 
-	def subscribe(self, handler: MethodType | FunctionType) -> None:
+	def on(self, handler: MethodType | FunctionType) -> None:
 		handler_cnt = builtins.len(self.handlers)
 
 		if handler_cnt >= self.max_handlers and not self.max_handlers < 0:
@@ -33,7 +33,7 @@ class EventEmitter:
 		if handler not in self.handlers:
 			self.handlers.append(handler)
 
-	def unsubscribe(self, handler: MethodType | FunctionType | None=None) -> None:
+	def dison(self, handler: MethodType | FunctionType | None=None) -> None:
 		handler_cnt = builtins.len(self.handlers)
 
 		if handler == None or handler_cnt == 1:
@@ -42,7 +42,7 @@ class EventEmitter:
 		elif handler in self.handlers:
 			self.handlers.remove(handler)
 
-	async def ainvoke(self, *args, **kwargs) -> list[Any]:
+	async def aemit(self, *args, **kwargs) -> list[Any]:
 		corous_or_results: list[CoroutineType | Any] = \
 			[handler(self.name, *args, **kwargs) for handler in self.handlers]
 
@@ -60,7 +60,7 @@ class EventEmitter:
 
 		return results
 
-	def invoke(self, *args, **kwargs) -> list[Any] | CoroutineType:
+	def emit(self, *args, **kwargs) -> list[Any] | CoroutineType:
 		if not self.handlers:
 			if not self.silent:
 				tui.print(f"No any handler subscribed for event \"{self.name}\".")

@@ -6,12 +6,11 @@ from typing import Any
 import PySide6.QtWidgets as qtw
 import PySide6.QtGui as qtgui
 import PySide6.QtCore as qtcore
+import PySide6.QtSvg as qtsvg
 
 import asyncio
 from audioplayer_client import AudioPlayerClient
 import utils
-
-import tui
 
 from translator import Translator
 
@@ -26,18 +25,6 @@ from qasync import QEventLoop
 def bytes_to_icon(image: bytes) -> qtgui.QIcon:
 	return qtgui.QIcon(qtgui.QPixmap(image))
 
-def crop_to_square(pixmap: qtgui.QPixmap) -> qtgui.QPixmap:
-	"""Обрезает картинку по центру до идеального квадрата"""
-	width = pixmap.width()
-	height = pixmap.height()
-
-	square_size = min(width, height)
-
-	x = (width - square_size) // 2
-	y = (height - square_size) // 2
-
-	return pixmap.copy(x, y, square_size, square_size)
-
 def round_square(pixmap: qtgui.QPixmap) -> qtgui.QPixmap:
 	"""Обрезает картинку для скругления"""
 	width = pixmap.width()
@@ -50,7 +37,7 @@ def round_square(pixmap: qtgui.QPixmap) -> qtgui.QPixmap:
 	painter.setRenderHint(qtgui.QPainter.RenderHint.Antialiasing, True)
 
 	path = qtgui.QPainterPath()
-	path.addRoundedRect(0, 0, width, height, 50, 50)
+	path.addRoundedRect(0, 0, width, height, 30, 30)
 
 	painter.setClipPath(path)
 	painter.drawPixmap(0, 0, pixmap)
@@ -217,8 +204,6 @@ class AnimatedLabel(qtw.QLabel):
 			self.anim.setEasingCurve(qtcore.QEasingCurve.Type.OutCubic)
 			self.anim.start()
 
-			self.normal_geometry = None
-
 		super().leaveEvent(a0)
 
 	def mousePressEvent(self, ev: qtgui.QMouseEvent) -> None:
@@ -234,6 +219,7 @@ class AnimatedLabel(qtw.QLabel):
 
 		self.anim = qtcore.QPropertyAnimation(self, b"geometry")
 		self.anim.setDuration(200)
+		self.anim.setStartValue(g)
 		self.anim.setEndValue(click_geometry)
 		self.anim.setEasingCurve(qtcore.QEasingCurve.Type.OutCubic)
 		self.anim.start()
@@ -321,18 +307,15 @@ class ScalableCoverWidget(qtw.QLabel):
 
 		self.setPixmap(pixmap)
 
-	def update_cover(self, cover: bytes) -> None:
-		pixmap = qtgui.QPixmap()
+	def update_pixmap(self, pixmap: qtgui.QPixmap) -> None:
+		self.orig_pixmap = pixmap
 
-		success = pixmap.loadFromData(cover)
+		self._resize()
 
-		if success:
-			pixmap = crop_to_square(pixmap)
-			pixmap = round_square(pixmap)
+	def update_cover(self, cover: qtgui.QPixmap) -> None:
+		self.orig_pixmap = round_square(cover.copy())
 
-			self.orig_pixmap = pixmap
-
-			self._resize()
+		self._resize()
 
 	def resizeEvent(self, event: qtgui.QResizeEvent) -> None:
 		super().resizeEvent(event)
@@ -380,7 +363,7 @@ class TableEntryWidget(qtw.QWidget):
 
 		self.value_widget = MarqueeLabel()
 		self.value_widget.setProperty("class", "table_value")
-		self.value_widget.setText(value)
+		self.value_widget.setText(value if value else "N/A")
 
 		layout = qtw.QHBoxLayout()
 		# layout.setSpacing(20)
@@ -427,8 +410,25 @@ class TableWidget(qtw.QWidget):
 
 			break
 
+def load_svg_as_pixmap(file: str) -> qtgui.QPixmap | None:
+	renderer = qtsvg.QSvgRenderer(file)
+
+	if not renderer.isValid():
+		return
+
+	pixmap = qtgui.QPixmap(256, 256)
+	pixmap.fill(qtgui.QColor.fromRgba(0))
+
+	painter = qtgui.QPainter(pixmap)
+
+	renderer.render(painter)
+
+	painter.end()
+
+	return pixmap
+
 class HPlayerID3Widget(qtw.QWidget):
-	def __init__(self, id3: dict) -> None:
+	def __init__(self, work_dir: Path, id3: dict) -> None:
 		super().__init__()
 
 		self.title = MarqueeLabel()
@@ -443,6 +443,12 @@ class HPlayerID3Widget(qtw.QWidget):
 
 		self.cover = ScalableCoverWidget()
 		self.cover.setMinimumSize(100, 100)
+		self.cover.setMaximumSize(150, 150)
+
+		self.default_cover = load_svg_as_pixmap(str(work_dir / "default-cover.svg"))
+
+		if self.default_cover is not None:
+			self.cover.update_pixmap(self.default_cover)
 
 		title_and_lead_layout = qtw.QVBoxLayout()
 		title_and_lead_layout.setSpacing(10)
@@ -474,6 +480,9 @@ class HPlayerID3Widget(qtw.QWidget):
 
 		self.setLayout(layout)
 
+	def update_cover(self, cover: qtgui.QPixmap) -> None:
+		self.cover.update_cover(cover)
+
 	def update_id3(self, id3: dict) -> None:
 		if "title" in id3:
 			self.title.setText(id3["title"])
@@ -482,9 +491,6 @@ class HPlayerID3Widget(qtw.QWidget):
 			id3["lead"] = ' и '.join(id3["lead"])
 
 			self.lead.setText(id3["lead"])
-
-		if "cover" in id3:
-			self.cover.update_cover(id3["cover"])
 
 		for key in self.keys:
 			if key not in id3:
@@ -657,6 +663,11 @@ class PlayerWidget(qtw.QWidget):
 		self.cover.setMaximumSize(200, 200)
 		self.cover.clicked.connect(self.clicked_on_cover.emit)
 
+		self.default_cover = load_svg_as_pixmap(str(work_dir / "default-cover.svg"))
+
+		if self.default_cover is not None:
+			self.cover.update_pixmap(self.default_cover)
+
 		self.id3_widget = PlayerID3Widget(id3["title"], id3["lead"])
 
 		self.progress = PlayerProgressBar()
@@ -704,14 +715,22 @@ class HBoxLayoutWidget(qtw.QWidget):
 
 		self.widget_layout = qtw.QHBoxLayout()
 
+		self.widgets = []
+
 		self.setLayout(self.widget_layout)
 
 	def addWidget(self, widget: qtw.QWidget):
+		self.widgets.append(widget)
+
 		self.widget_layout.addWidget(widget)
 
-	def addLayout(self, layout: qtw.QLayout):
-		self.widget_layout.addLayout(layout)
+	def enterEvent(self, event) -> None:
+		for widget in self.widgets:
+			widget.enterEvent(event)
 
+	def leaveEvent(self, event) -> None:
+		for widget in self.widgets:
+			widget.leaveEvent(event)
 
 class HPlayerWidget(qtw.QWidget):
 	on_prev = qtcore.Signal()
@@ -728,14 +747,21 @@ class HPlayerWidget(qtw.QWidget):
 		self.control.on_next.connect(self.on_next)
 		self.control.setFixedWidth(250)
 
-		cover_box = HBoxLayoutWidget()
+		cover_box = qtw.QWidget()
+		cover_box.setFixedSize(215, 215)
 
-		self.cover = PlayerCoverWidget()
-		self.cover.setMinimumSize(190, 190)
-		self.cover.setMaximumSize(200, 200)
+		self.cover = PlayerCoverWidget(cover_box)
+		self.cover.setMinimumSize(200, 200)
+		self.cover.setMaximumSize(210, 210)
+		self.cover.move(7, 7)
 		self.cover.clicked.connect(self.clicked_on_cover.emit)
 
-		cover_box.addWidget(self.cover)
+		self.default_cover = load_svg_as_pixmap(str(work_dir / "default-cover.svg"))
+
+		if self.default_cover is not None:
+			self.cover.update_pixmap(self.default_cover)
+
+		self.cover.setSizePolicy(qtw.QSizePolicy.Policy.Ignored, qtw.QSizePolicy.Policy.Ignored)
 
 		self.id3_widget = PlayerID3Widget(id3["title"], id3["lead"], orientation=qtcore.Qt.AlignmentFlag.AlignLeft)
 		self.id3_widget.setMaximumWidth(200)
@@ -752,12 +778,19 @@ class HPlayerWidget(qtw.QWidget):
 		id3_widget_layout.addWidget(self.control, alignment=qtcore.Qt.AlignmentFlag.AlignBottom)
 		id3_widget_layout.addStretch()
 
+		self.text_widget = qtw.QLabel()
+		self.text_widget.setObjectName("text")
+
 		layout = qtw.QVBoxLayout()
 		layout.setSpacing(10)
+		layout.addStretch()
+		layout.addWidget(self.text_widget, alignment=qtcore.Qt.AlignmentFlag.AlignHCenter)
 		layout.addStretch()
 		layout.addLayout(id3_widget_layout)
 
 		layout.addWidget(self.progress)
+
+		self.synced_text = {}
 
 		# qtw.Q
 
@@ -769,14 +802,43 @@ class HPlayerWidget(qtw.QWidget):
 
 		super().resizeEvent(event)
 
-	def set_second(self, second: int) -> None:
-		self.progress.set_second(second)
+	def set_second(self, second: float) -> None:
+		self.progress.set_second(int(second))
+
+		if not self.synced_text:
+			return
+
+		keys = iter(self.synced_text.keys())
+
+		try:
+			key = float(next(keys))
+
+			# if key >= second:
+			# 	self.text_widget.setText("")
+
+			for value in self.synced_text.values():
+				key = float(next(keys))
+
+				if key < second:
+					continue
+
+				self.text_widget.setText(value)
+
+				break
+		except StopIteration:
+			return
 
 	def set_duration(self, duration: int) -> None:
 		self.progress.set_duration(duration)
 
 	def set_state(self, state: str) -> None:
 		self.control.set_state(state)
+
+	def update_cover(self, cover: qtgui.QPixmap) -> None:
+		self.cover.update_cover(cover)
+
+	def update_text(self, text: dict) -> None:
+		self.synced_text = text
 
 	def update_id3(self, id3: dict) -> None:
 		self.id3_widget.update_id3(id3)
@@ -787,7 +849,7 @@ class HPlayerWidget(qtw.QWidget):
 		width = self.size().width()
 		self.id3_widget.setMaximumWidth(width // 4)
 
-	def update_interface(self, second: int, duration: int, id3: dict) -> None:
+	def update_interface(self, second: float, duration: int, id3: dict) -> None:
 		self.set_second(second)
 		self.set_duration(duration)
 
@@ -882,7 +944,7 @@ class MenuWidget(qtw.QWidget):
 
 		hint_width = min(max_width, size.width())
 
-		print(f"{hint_width=}")
+		# print(f"{hint_width=}")
 
 		x, y = new_size.width() - hint_width, 0
 		width, height = hint_width, new_size.height()
@@ -913,10 +975,10 @@ class MenuWidget(qtw.QWidget):
 		return result
 
 class ID3WidgetMenu(qtw.QWidget):
-	def __init__(self, parent=None) -> None:
+	def __init__(self, work_dir: Path, parent=None) -> None:
 		super().__init__(parent=parent)
 
-		self.id3_widget = HPlayerID3Widget({
+		self.id3_widget = HPlayerID3Widget(work_dir, {
 			"title": "Loading..."
 		})
 
@@ -932,6 +994,9 @@ class ID3WidgetMenu(qtw.QWidget):
 		id3_widget_bg_layout.addWidget(self.id3_widget_bg)
 
 		self.setLayout(id3_widget_bg_layout)
+
+	def update_cover(self, cover: qtgui.QPixmap) -> None:
+		self.id3_widget.update_cover(cover)
 
 	def update_id3(self, id3: dict) -> None:
 		self.id3_widget.update_id3(id3)
@@ -984,7 +1049,7 @@ class AudioPlayerClientGUI(qtw.QMainWindow):
 		self.player_widget.on_play_pause.connect(self.protocol.play_pause)
 		self.player_widget.on_next.connect(self.protocol.next)
 
-		self.id3_widget = ID3WidgetMenu()
+		self.id3_widget = ID3WidgetMenu(work_dir)
 
 		central_widget = MenuWidget(self.player_widget)
 		central_widget.setWidgetAsMenu(self.id3_widget)
@@ -1020,51 +1085,50 @@ class AudioPlayerClientGUI(qtw.QMainWindow):
 
 		self.clipboard = app.clipboard()
 
-		self.protocol.on_id3_info_changed.subscribe(self.id3_info_changed)
-		self.protocol.on_time_changed.subscribe(self.time_changed)
-		self.protocol.on_duration_changed.subscribe(self.duration_changed)
-		self.protocol.on_volume_changed.subscribe(self.volume_changed)
-		self.protocol.on_state_changed.subscribe(self.state_changed)
-		self.protocol.on_track_id_changed.subscribe(self.track_id_changed)
+		self.protocol.on_id3_info_changed.on(self.id3_info_changed)
+		self.protocol.on_text_changed.on(self.text_changed)
+		self.protocol.on_cover_changed.on(self.cover_changed)
+		self.protocol.on_time_changed.on(self.time_changed)
+		self.protocol.on_duration_changed.on(self.duration_changed)
+		self.protocol.on_volume_changed.on(self.volume_changed)
+		self.protocol.on_state_changed.on(self.state_changed)
+		self.protocol.on_track_id_changed.on(self.track_id_changed)
 
-	def id3_info_changed(self, _: str, value: dict[str, Any]) -> None:
+	def cover_changed(self, _: str, cover: bytes) -> None:
 		if self.cover_name:
 			cover_dir = self.get_cover_name()
 
 			if os.path.isfile(cover_dir):
 				os.remove(cover_dir)
 
-		self.id3_info = value
+		pixmap = qtgui.QPixmap()
+		success = pixmap.loadFromData(cover)
 
-		if self.id3_info is None:
-			self.id3_info: dict[str, Any] = {
-				"title": "Nothing is playing",
-			}
+		if success:
+			self.player_widget.update_cover(pixmap)
+			self.id3_widget.update_cover(pixmap)
+
+			background_pixmap = pixmap.copy()
+
+			painter = qtgui.QPainter(background_pixmap)
+
+			painter.setCompositionMode(qtgui.QPainter.CompositionMode.CompositionMode_SourceAtop)
+			painter.fillRect(background_pixmap.rect(), qtgui.QColor(0, 0, 0, 100))
+
+			painter.end()
+
+			self.background_label.setPixmap(background_pixmap)
+
+	def id3_info_changed(self, _: str, value: dict[str, Any]) -> None:
+		self.id3_info: dict[str, Any] = value
 
 		self.player_widget.update_id3(self.id3_info)
 		self.id3_widget.update_id3(self.id3_info)
 
-		if "cover" in self.id3_info and self.id3_info["cover"] is not None:
-			pixmap = qtgui.QPixmap()
-
-			success = pixmap.loadFromData(self.id3_info["cover"])
-
-			painter = qtgui.QPainter(pixmap)
-
-			painter.setCompositionMode(qtgui.QPainter.CompositionMode.CompositionMode_SourceAtop)
-			painter.fillRect(pixmap.rect(), qtgui.QColor(0, 0, 0, 100))
-
-			painter.end()
-
-			if success:
-				pixmap = crop_to_square(pixmap)
-
-				self.background_label.setPixmap(pixmap)
-
 	def time_changed(self, _: str, value: float) -> None:
 		self.cur_time = value
 
-		self.player_widget.set_second(int(self.cur_time))
+		self.player_widget.set_second(self.cur_time)
 	def duration_changed(self, _: str, value: float) -> None:
 		self.duration = value
 
@@ -1077,6 +1141,12 @@ class AudioPlayerClientGUI(qtw.QMainWindow):
 		self.player_widget.set_state(self.state)
 	def track_id_changed(self, _: str, value: int) -> None:
 		self.track_id = value
+
+		self.protocol.update_text()
+		self.protocol.update_cover(self.track_id, 256)
+
+	def text_changed(self, _: str, text: dict[str, Any]) -> None:
+		self.player_widget.update_text(text["text"])
 
 	def format_song_id3(self) -> None:
 		if not self.id3_info or not self.clipboard:

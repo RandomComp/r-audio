@@ -4,10 +4,7 @@ import json
 
 from collections import deque
 
-from io import BytesIO
 from typing import Any
-
-from PIL import Image
 
 import asyncio
 
@@ -65,20 +62,23 @@ class AudioPlayerClient:
 	def __init__(self, config: dict | None=None):
 		self.finished = asyncio.Event()
 
-		self.__id3_info = {}
-		self.__playlist = []
+		self.id3_info = {}
 		self.audio_start_time = time.time()
-		self.__duration = 0
-		self.__volume = 0
-		self.__state = "Paused"
-		self.__track_id = 0
+		self.duration = 0
+		self.volume = 0
+		self.state = "Paused"
+		self.track_id = 0
+		self.playlist_track_id = 0
 
 		self.on_id3_info_changed = EventEmitter(name="on_id3_info_changed")
+		self.on_text_changed = EventEmitter(name="on_text_changed")
+		self.on_cover_changed = EventEmitter(name="on_cover_changed")
 		self.on_time_changed = EventEmitter(name="on_time_changed")
 		self.on_duration_changed = EventEmitter(name="on_duration_changed")
 		self.on_volume_changed = EventEmitter(name="on_volume_changed")
 		self.on_state_changed = EventEmitter(name="on_state_changed")
 		self.on_track_id_changed = EventEmitter(name="on_track_id_changed")
+		self.on_playlist_track_id_changed = EventEmitter(name="on_playlist_track_id_changed")
 
 		self.addr = ("127.0.0.1", 6700)
 		self.reader, self.writer = None, None
@@ -87,54 +87,48 @@ class AudioPlayerClient:
 		self.config = config
 
 	@property
-	def id3_info(self) -> dict[str, Any]:
-		return self._id3_info
-	@property
 	def cur_time(self) -> float:
 		return time.time() - self.audio_start_time
-	@property
-	def duration(self) -> float:
-		return self.__duration
-	@property
-	def volume(self) -> float:
-		return self.__volume
-	@property
-	def state(self) -> str:
-		return self.__state
-	@property
-	def track_id(self) -> int:
-		return self.__track_id
 
-	@id3_info.setter
-	def id3_info(self, value: dict[str, Any]) -> None:
-		self.__id3_info = value
+	def __update_id3_info(self, value: dict[str, Any]) -> None:
+		self.id3_info = value
 
-		self.on_id3_info_changed.invoke(value)
+		self.on_id3_info_changed.emit(value)
+
+	def __update_text(self, text: dict[str, Any]) -> None:
+		self.on_text_changed.emit(text)
+
+	def __update_cover(self, cover: bytes | None) -> None:
+		self.on_cover_changed.emit(cover)
 
 	@cur_time.setter
 	def cur_time(self, value: float) -> None:
 		# self.audio.second = val
 		return
-	@duration.setter
-	def duration(self, value: float) -> None:
-		self.__duration = value
+	def __update_duration(self, value: float) -> None:
+		self.duration = value
 
-		self.on_duration_changed.invoke(value)
-	@volume.setter
-	def volume(self, value: float) -> None:
-		self.__volume = value
+		self.on_duration_changed.emit(value)
 
-		self.on_volume_changed.invoke(value)
-	@state.setter
-	def state(self, value: str) -> None:
-		self.__state = value
+	def __update_volume(self, value: float) -> None:
+		self.volume = value
 
-		self.on_state_changed.invoke(value)
-	@track_id.setter
-	def track_id(self, value: int) -> None:
-		self.__track_id = value
+		self.on_volume_changed.emit(value)
 
-		self.on_track_id_changed.invoke(value)
+	def __update_state(self, value: str) -> None:
+		self.state = value
+
+		self.on_state_changed.emit(value)
+
+	def __update_track_id(self, value: int) -> None:
+		self.track_id = value
+
+		self.on_track_id_changed.emit(value)
+
+	def __update_playlist_track_id(self, value: int) -> None:
+		self.playlist_track_id = value
+
+		self.on_playlist_track_id_changed.emit(value)
 
 	def send_text(self, writer: asyncio.StreamWriter, text: str) -> None:
 		# print(f"{text=}")
@@ -172,25 +166,23 @@ class AudioPlayerClient:
 		return state, command, msg
 
 	async def send_command(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, _expected_command: str, argv: list[str] | None=None) -> tuple[str, str]:
-		expected_command = f"{_expected_command}{'|'.join(argv) if argv else ""}"
+		command_args = f"|{'|'.join(argv)}" if argv else ""
+
+		expected_command = f"{_expected_command}{command_args}"
 
 		self.send_text(writer, expected_command)
 
 		await writer.drain()
 
-		state, command, msg = await self._read_answer(reader)
+		state, _, msg = await self._read_answer(reader)
 
-		state_command = ["play", "pause", "play_pause"]
-		info_command = ["prev", "next", "info"]
+		if state == "ERROR":
+			return "ERROR", "Server returned ERROR code"
 
-		if command in state_command:
-			self.state = msg
+		if not msg:
+			return "OK", ""
 
-		if command in info_command:
-			self.read_info(json.loads(msg))
-
-		if command == "update" and msg:
-			self.read_info(json.loads(msg))
+		self.read_info(json.loads(msg))
 
 		return state, msg
 
@@ -204,9 +196,6 @@ class AudioPlayerClient:
 
 		if self.reader and self.writer:
 			await self.update_info()
-
-	def _load_id3(self, id3_info: dict) -> None:
-		self.id3_info = id3_info
 
 	async def wait_for_playing(self) -> None:
 		while self.state != "Playing":
@@ -235,24 +224,28 @@ class AudioPlayerClient:
 			self.audio_start_time = time.time() - info["cur_time"]
 
 		if "duration" in info:
-			self.duration = info["duration"]
+			self.__update_duration(info["duration"])
 
 		if "volume" in info:
-			self.volume = info["volume"]
+			self.__update_volume(info["volume"])
 
 		if "state" in info:
-			self.state = info["state"]
+			self.__update_state(info["state"])
 
-		if "track_id" in info:
-			self.track_id = info["track_id"]
+		if "playlist_track_id" in info:
+			self.__update_playlist_track_id(info["playlist_track_id"])
+
+		if "id" in info:
+			self.__update_track_id(info["id"])
 
 		if "id3" in info:
-			id3 = info["id3"]
+			self.__update_id3_info(info["id3"])
 
-			if id3 and "cover" in id3 and id3["cover"]:
-				id3["cover"] = base64.b64decode(id3["cover"])
+		if "text" in info:
+			self.__update_text(info["text"])
 
-			self._load_id3(id3)
+		if "cover" in info:
+			self.__update_cover(base64.b64decode(info["cover"]))
 
 	async def update_info(self) -> None:
 		if not self.reader or not self.writer:
@@ -285,7 +278,7 @@ class AudioPlayerClient:
 				await self.send_command(self.reader, self.writer, "update")
 
 				if self.is_playing():
-					self.on_time_changed.invoke(self.cur_time)
+					self.on_time_changed.emit(self.cur_time)
 
 			await asyncio.sleep(0.01)
 
@@ -302,7 +295,7 @@ class AudioPlayerClient:
 	async def close_connection(self) -> None:
 		self.finished.set()
 
-		self.id3_info = {}
+		self._id3_info = {}
 
 		if self.writer:
 			self.writer.close()
@@ -323,6 +316,12 @@ class AudioPlayerClient:
 
 	def play_pause(self) -> None:
 		self.command_queue.append(("play_pause", []))
+
+	def update_cover(self, id: int, size: int) -> None:
+		self.command_queue.append(("cover", [str(id), str(size)]))
+
+	def update_text(self) -> None:
+		self.command_queue.append(("info", ["text"]))
 
 	def __repr__(self) -> str:
 		return f"""
@@ -376,12 +375,12 @@ class AudioPlayerClientTUI(ServiceInterface):
 
 		self.protocol = AudioPlayerClient()
 
-		self.protocol.on_id3_info_changed.subscribe(self.id3_info_changed)
-		self.protocol.on_time_changed.subscribe(self.time_changed)
-		self.protocol.on_duration_changed.subscribe(self.duration_changed)
-		self.protocol.on_volume_changed.subscribe(self.volume_changed)
-		self.protocol.on_state_changed.subscribe(self.state_changed)
-		self.protocol.on_track_id_changed.subscribe(self.track_id_changed)
+		self.protocol.on_id3_info_changed.on(self.id3_info_changed)
+		self.protocol.on_time_changed.on(self.time_changed)
+		self.protocol.on_duration_changed.on(self.duration_changed)
+		self.protocol.on_volume_changed.on(self.volume_changed)
+		self.protocol.on_state_changed.on(self.state_changed)
+		self.protocol.on_track_id_changed.on(self.track_id_changed)
 
 	def __output(self, *values: object, sep: str=" ", end: str="\n") -> None:
 		string = f"{sep.join(map(str, values))}{end}"

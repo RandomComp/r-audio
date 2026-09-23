@@ -14,30 +14,31 @@ from listgenerator import ListGenerator
 
 import numpy as np
 
+from functools import reduce
+from operator import getitem
+
 # =================================== DB FUNCTION ===================================
-def query(where: dict, category: str, key: str, values: list[str]) -> list[dict]:
+def query(from_dict: dict, where_key: list[str], where_value: str, result_keys: list[list[str]]) -> list[dict]:
 	result = []
 
-	for file in where.items():
-		db_file = where[file]
+	for file in from_dict.values():
+		item = file
 
-		if category not in db_file:
+		try:
+			value = reduce(getitem, where_key, item)
+		except KeyError:
 			continue
 
-		if isinstance(db_file[category], list):
-			if key not in db_file[category]:
+		if isinstance(value, list):
+			if where_value not in value:
 				continue
-		elif db_file[category] != key:
+		elif value != where_value:
 			continue
 
-		temp = []
+		temp = {}
 
-		for arg_fields in values:
-			cur = {}
-
-			item = db_file
-
-			fields = arg_fields.split(".")
+		for fields in result_keys:
+			cur = temp
 
 			for i in range(len(fields) - 1):
 				field = fields[i]
@@ -50,8 +51,6 @@ def query(where: dict, category: str, key: str, values: list[str]) -> list[dict]
 				cur = cur[field]
 
 			cur[fields[-1]] = item[fields[-1]]
-
-			temp.append(cur)
 
 		if temp:
 			result.append(temp)

@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+import io
+
 import numpy as np
 
 import asyncio
@@ -20,6 +22,10 @@ import json
 import base64
 
 import traceback
+
+import utils
+
+from PIL import Image, UnidentifiedImageError
 
 from pathlib import Path
 
@@ -102,7 +108,7 @@ class AudioPlayer:
 
 		self.something_changed = asyncio.Event()
 		self.something_changed.clear()
-		self.what_changed: list[tuple[str, int]] = []
+		self.what_changed: list[str] = []
 
 		self.__lines_outputed = 0
 
@@ -274,59 +280,82 @@ class AudioPlayer:
 			"duration": self.audio.duration,
 			"volume": self.volume,
 			"state": self.state,
-			"track_id": self.track_id,
+			"playlist_track_id": self.playlist_track_id,
+			"id": self.track_id,
 			"id3": self.id3_info,
 		}
 
+		if not what_changed:
+			return json.dumps(data, ensure_ascii=False, cls=BytesEncoder)
+
 		result = {}
 
-		if what_changed:
-			for change in what_changed:
-				if not change:
-					continue
+		for change in what_changed:
+			if change != "text":
+				result[change] = data[change]
 
-				cur = result
+				continue
 
-				fields = change.split(".")
-				field = ""
+			result["text"] = {"text": {}, "text_status": "not found"}
 
-				item = data
+			db_file = utils.query(self.playlist_payback.db["files"], ["id"], self.track_id, [["text"], ["text_status"]])
 
-				for i in range(len(fields) - 1):
-					field = fields[i]
+			if len(db_file) <= 0:
+				result["text"]["text"] = {}
 
-					item = item[field]
+				continue
 
-					if field not in cur:
-						cur[field] = {}
+			db_file = db_file[0]
 
-					cur = cur[field]
+			result["text"]["text_status"] = db_file["text_status"]
 
-				cur[fields[-1]] = item[fields[-1]]
-		else:
-			result = data
+			if db_file["text_status"] == "not found":
+				result["text"]["text"] = {}
+
+				continue
+
+			text = Path(db_file["text"]).read_text(encoding="UTF-8")
+
+			if db_file["text_status"] == "synced":
+				result_text = {}
+
+				for line in text.splitlines():
+					line = line[1:].strip()
+
+					minute, line = line.split(":", maxsplit=1)
+					second, line = line.split("]", maxsplit=1)
+
+					line = line[1:].strip()
+
+					time = float(minute) * 60.0 + float(second)
+
+					result_text[time] = line
+
+				result["text"]["text"] = result_text
+			else:
+				result["text"]["text"] = text
 
 		return json.dumps(result, ensure_ascii=False, cls=BytesEncoder)
 
 	async def do_next(self, argv: list[str]) -> tuple[str, str]:
 		await self.next()
 
-		return "OK", self.get_info()
+		return "OK", ""
 
 	async def do_prev(self, argv: list[str]) -> tuple[str, str]:
 		await self.prev()
 
-		return "OK", self.get_info()
+		return "OK", ""
 
 	async def do_pause(self, argv: list[str]) -> tuple[str, str]:
 		self.pause()
 
-		return "OK", self.state
+		return "OK", ""
 
 	async def do_play(self, argv: list[str]) -> tuple[str, str]:
 		self.play()
 
-		return "OK", self.state
+		return "OK", ""
 
 	async def do_play_pause(self, argv: list[str]) -> tuple[str, str]:
 		if self.is_playing():
@@ -334,7 +363,18 @@ class AudioPlayer:
 		else:
 			self.play()
 
-		return "OK", self.state
+		return "OK", ""
+
+	async def do_update(self, argv: list[str]) -> tuple[str, str]:
+		if self.something_changed.is_set():
+			answer = self.get_info(self.what_changed)
+
+			self.something_changed.clear()
+			self.what_changed = []
+
+			return "OK", answer
+
+		return "OK", ""
 
 	async def do_get_info(self, argv: list[str]) -> tuple[str, str]:
 		return "OK", self.get_info(argv[1:])
@@ -343,12 +383,58 @@ class AudioPlayer:
 		if len(argv) <= 2:
 			return "ERROR", "Expected id from db and size"
 
-		id = int(argv[1])
+		id = argv[1]
 		size = int(argv[2])
 
-		load_cover
+		result = utils.query(self.playlist_payback.db["files"], ["id"], id, [["title"], ["lead"], ["cover"]])
 
-		return "OK", ""
+		if len(result) <= 0:
+			return "ERROR", f"Not known track with id {id}"
+
+		result = result[0]
+
+		name = f"{', '.join(result["lead"])} -- {result["title"]}"
+
+		if "cover" not in result:
+			return "ERROR", f"Not known field 'cover' for track id {id} ({name})"
+
+		cover = Path(result["cover"])
+
+		if not cover.is_file():
+			return "ERROR", f"Cover unavailable for {id} ({name})"
+
+		if size == 0:
+			return "ERROR", "Invalid size"
+
+		try:
+			cover_img = Image.open(cover)
+
+		except (UnidentifiedImageError, FileNotFoundError) as e:
+			return "ERROR", f"An error occured while image reading: {e}"
+
+		square_size = min(cover_img.width, cover_img.height)
+
+		x = (cover_img.width - square_size) // 2
+		y = (cover_img.height - square_size) // 2
+
+		cover_img = cover_img.crop((x, y, x + square_size, y + square_size))
+
+		cover_img_resized = cover_img.resize((size, size))
+
+		cover_bytes = io.BytesIO()
+
+		cover_img_resized.save(cover_bytes, format="JPEG")
+
+		cover_img_resized.close()
+		cover_img.close()
+
+		cover_bytes.seek(0)
+
+		cover_base64 = str(base64.b64encode(cover_bytes.read()), encoding="ascii")
+
+		result = {"cover": cover_base64}
+
+		return "OK", json.dumps(result)
 
 	async def do_db(self, argv: list[str]) -> tuple[str, str]:
 		if len(argv) <= 1:
@@ -364,51 +450,10 @@ class AudioPlayer:
 				return "ERROR", f"Expected key for 'db|query|{category}'"
 
 			key = argv[3]
+			values = argv[4:]
 
-			result = []
-
-			for file in self.playlist_payback.db:
-				temp = []
-
-				for arg_fields in argv[4:]:
-					db_file = self.playlist_payback.db[file]
-
-					if category not in db_file:
-						continue
-
-					if isinstance(db_file[category], list):
-						if key not in db_file[category]:
-							continue
-
-					elif db_file[category] != key:
-						continue
-
-					cur = {}
-
-					item = db_file
-
-					fields = arg_fields.split(".")
-
-					for i in range(len(fields) - 1):
-						field = fields[i]
-
-						item = item[field]
-
-						if field not in cur:
-							cur[field] = {}
-
-						cur = cur[field]
-
-					print(f"{item=}")
-
-					cur[fields[-1]] = item[fields[-1]]
-
-					temp.append(cur)
-
-				if temp:
-					result.append(temp)
-
-			result = json.dumps(result, ensure_ascii=False, cls=BytesEncoder)
+			result = utils.query(self.playlist_payback.db["files"], category.split("."), key, [value.split(".") for value in values])
+			result = json.dumps(result, ensure_ascii=False)
 
 			return "OK", result
 
@@ -449,7 +494,7 @@ class AudioPlayer:
 			elif argv[1] == "appendnext":
 				songs = argv[2:]
 
-				index = self.track_id + 1
+				index = self.playlist_track_id + 1
 
 				self.playlist[index:index] = songs
 			else:
@@ -477,7 +522,9 @@ class AudioPlayer:
 			"play_pause": self.do_play_pause,
 			"playlist": self.do_playlist,
 			"db": self.do_db,
+			"cover": self.do_get_cover,
 			"info": self.do_get_info,
+			"update": self.do_update,
 			"quit": self.do_quit,
 		}
 
@@ -509,25 +556,12 @@ class AudioPlayer:
 
 				status = answer = ""
 
-				if command == "update":
-					if self.something_changed.is_set():
-						status = "OK"
-						answer = self.get_info(self.what_changed)
+				status_and_answer = await self.handle_message(command, argv)
 
-						self.something_changed.clear()
+				if not status_and_answer:
+					continue
 
-						self.what_changed = []
-					else:
-						status = "OK"
-						answer = ""
-
-				else:
-					status_and_answer = await self.handle_message(command, argv)
-
-					if not status_and_answer:
-						continue
-
-					status, answer = status_and_answer
+				status, answer = status_and_answer
 
 				answer = f"{status}|{' '.join(argv)}|{answer}"
 
@@ -553,13 +587,14 @@ class AudioPlayer:
 		return "", ""
 
 	def _load_id3(self) -> None:
-		track = self.playlist[self.track_id]
+		track = self.playlist[self.playlist_track_id]
 
 		track_db = self.playlist_payback.db["files"][track]
 
 		keys = ["genre", "title", "lead", "album", "year"]
 
 		self.id3_info = {key: track_db[key] for key in keys}
+		self.track_id = track_db["id"]
 
 		self.something_changed.set()
 
@@ -578,8 +613,8 @@ class AudioPlayer:
 		self._load_id3()
 
 	@property
-	def track_id(self) -> int:
-		return self.audio.track_id
+	def playlist_track_id(self) -> int:
+		return self.audio.playlist_track_id
 
 	async def play_loop(self) -> None:
 		if not self.stream:
@@ -741,7 +776,7 @@ self.play_speed = {self.play_speed}
 self.chunk_seconds = {self.chunk_seconds}
 self.mock = {self.mock}
 self.cover_name = {self.get_cover_name()}
-self.track_id = {self.track_id}"""
+self.playlist_track_id = {self.playlist_track_id}"""
 
 	async def __aenter__(self):
 		await self.open()
