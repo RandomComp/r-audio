@@ -934,7 +934,7 @@ class MenuWidget(qtw.QWidget):
 
 		max_width = int(new_size.width() * 0.4)
 
-		hint_width = min(max_width, size.width())
+		hint_width = min(max_width, 600) # size.width())
 
 		# print(f"{hint_width=}")
 
@@ -1249,8 +1249,6 @@ class AudioPlayerClientGUI(qtw.QMainWindow, ServiceInterface):
 	def get_metadata(self) -> 'a{sv}':
 		cover_dir = self.get_cover_name()
 
-		print(self.id3_info)
-
 		result = {
 			"mpris:trackid": Variant("o", f"/com/r_audio/track/{self.track_id}"),
 			"mpris:length": Variant("x", int(self.duration * 1000 * 1000)),
@@ -1355,8 +1353,8 @@ class AudioPlayerClientGUI(qtw.QMainWindow, ServiceInterface):
 
 	@method()
 	async def Previous(self):
-		if self.second >= 5:
-			self.second = 0
+		if self.protocol.cur_time >= 5:
+			self.protocol.cur_time = 0
 		else:
 			self.protocol.prev()
 
