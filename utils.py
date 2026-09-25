@@ -18,21 +18,47 @@ from functools import reduce
 from operator import getitem
 
 # =================================== DB FUNCTION ===================================
-def query(from_dict: dict, where_key: list[str], where_value: str, result_keys: list[list[str]]) -> list[dict]:
+def query(from_dict: dict, where_keys: list[list[str]], where_values: list[str], result_keys: list[list[str]], exact: bool=True) -> list[dict]:
 	result = []
 
 	for file in from_dict.values():
 		item = file
 
-		try:
-			value = reduce(getitem, where_key, item)
-		except KeyError:
-			continue
+		continued = False
 
-		if isinstance(value, list):
-			if where_value not in value:
-				continue
-		elif value != where_value:
+		for where_key, where_value in zip(where_keys, where_values):
+			try:
+				value: str = reduce(getitem, where_key, item)
+			except KeyError:
+				continued = True
+
+				break
+
+			if exact:
+				if isinstance(value, list):
+					if where_value not in value:
+						continued = True
+
+						break
+				elif where_value != value:
+					continued = True
+
+					break
+			else:
+				if isinstance(value, list):
+					if not all(where_value in value_elem for value_elem in value):
+						continued = True
+
+						break
+				elif where_value not in value:
+					continued = True
+
+					break
+
+			if continued:
+				break
+
+		if continued:
 			continue
 
 		temp = {}

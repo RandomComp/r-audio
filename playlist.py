@@ -2,6 +2,7 @@ from pathlib import Path
 
 import json
 from random import shuffle
+from typing import Any
 
 from mutagen import id3, MutagenError
 
@@ -127,20 +128,20 @@ class Playlist:
 
 		lrc_file = (self.work_dir / f"{Path(file).stem}.lrc").resolve()
 
-		result: dict = {}
+		result: dict = {"text": str(lrc_file), "text_status": ""}
 
-		result["text"] = str(lrc_file)
-		result["text_status"] = ""
+		file_name_lead, file_name_title = utils.parse_music_file_name(file)
+
+		id: dict[str, Any] = {"TIT2": file_name_title, "TPE1": file_name_lead}
 
 		try:
-			id = id3.Open(file)
+			file_id3 = id3.Open(file)
+
+			for key, value in file_id3.items():
+				id[key] = value
+
 		except MutagenError:
-			result["lead"], result["title"] = utils.parse_music_file_name(file)
-
-			status = self._save_lyrics(lrc_file, result)
-			result["text_status"] = status
-
-			return result
+			pass
 
 		keys = ["TCON", "TIT2", "TPE1", "TALB", "TDRC"]
 
@@ -153,14 +154,6 @@ class Playlist:
 				result[new_key] = None
 			else:
 				result[new_key] = str(value)
-
-		file_name_lead, file_name_title = utils.parse_music_file_name(file)
-
-		if result["lead"] == None:
-			result["lead"] = file_name_lead
-
-		if result["title"] == None:
-			result["title"] = file_name_title
 
 		cover_dir = Path().home() / ".cache" / "r-audio-server-covers"
 

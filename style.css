@@ -1,13 +1,15 @@
 * {
 	background-color: transparent;
+
+	/*border: 2px solid red;*/
 }
 
 #window {
 	background-color: rgba(36, 36, 40, 255);
 }
 
-#text {
-	font-size: 30px;
+#active_text_label {
+	font-size: 35px;
 	font-weight: 700;
 	color: #EFEFEF;
 }
@@ -64,7 +66,7 @@
 }
 
 #progress::chunk {
-	background-color: rgba(48, 160, 0, 200);
+	background-color: rgba(80, 210, 0, 200);
 	border-radius: 6px;
 }
 

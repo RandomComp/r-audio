@@ -194,9 +194,6 @@ class AudioPlayerClient:
 		except ConnectionRefusedError:
 			pass
 
-		if self.reader and self.writer:
-			await self.update_info()
-
 	async def wait_for_playing(self) -> None:
 		while self.state != "Playing":
 			await asyncio.sleep(0.1)
@@ -247,12 +244,6 @@ class AudioPlayerClient:
 		if "cover" in info:
 			self.__update_cover(base64.b64decode(info["cover"]))
 
-	async def update_info(self) -> None:
-		if not self.reader or not self.writer:
-			return
-
-		await self.send_command(self.reader, self.writer, "info")
-
 	async def update_info_timer(self) -> None:
 		i = 0
 
@@ -277,8 +268,8 @@ class AudioPlayerClient:
 			if i % 10 == 0:
 				await self.send_command(self.reader, self.writer, "update")
 
-				if self.is_playing():
-					self.on_time_changed.emit(self.cur_time)
+			if self.is_playing():
+				self.on_time_changed.emit(self.cur_time)
 
 			await asyncio.sleep(0.01)
 

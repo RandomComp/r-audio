@@ -2,25 +2,18 @@
 
 from asyncio.exceptions import CancelledError
 
-from filedialog import FileDialog
 from audioplayer import AudioPlayer
 from translator import Translator
-
-import ansi
 
 import utils
 
 import tui
-
-from input import Input
 
 import asyncio
 
 from sys import argv, platform
 
 from pathlib import Path
-
-from random import shuffle
 
 import tomllib
 

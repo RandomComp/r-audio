@@ -213,7 +213,12 @@ class AudioMixer:
 		else:
 			self._stream.close()
 
-		self._stream = AudioFileStream(self.playlist[self.playlist_track_id], self.sample_rate, self.channels, self.chunk_seconds)
+		try:
+			file = self.playlist[self.playlist_track_id]
+		except ValueError as e:
+			raise StopIteration from e
+
+		self._stream = AudioFileStream(file, self.sample_rate, self.channels, self.chunk_seconds)
 
 		if self.on_id3_update:
 			self.on_id3_update()

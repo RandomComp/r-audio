@@ -36,8 +36,11 @@ def round_square(pixmap: qtgui.QPixmap) -> qtgui.QPixmap:
 	painter = qtgui.QPainter(rounded_pixmap)
 	painter.setRenderHint(qtgui.QPainter.RenderHint.Antialiasing, True)
 
+	radius_width = (width * 30) / 256
+	radius_height = (height * 30) / 256
+
 	path = qtgui.QPainterPath()
-	path.addRoundedRect(0, 0, width, height, 30, 30)
+	path.addRoundedRect(0, 0, width, height, radius_width, radius_height)
 
 	painter.setClipPath(path)
 	painter.drawPixmap(0, 0, pixmap)
@@ -458,19 +461,13 @@ class HPlayerID3Widget(qtw.QWidget):
 		title_and_lead = qtw.QWidget()
 		title_and_lead.setLayout(title_and_lead_layout)
 
-		self.keys = ["title", "lead", "genre", "album", "year"]
+		self.keys = ["title", "genre", "album", "year"]
 
 		song_visual_info = qtw.QHBoxLayout()
 		song_visual_info.addWidget(self.cover)
 		song_visual_info.addWidget(title_and_lead)
 
 		self.table = TableWidget([key.capitalize() for key in self.keys])
-
-		for key in self.keys:
-			if key not in id3:
-				continue
-
-			self.table.set_value(key.capitalize(), id3[key])
 
 		layout = qtw.QVBoxLayout()
 		layout.addLayout(song_visual_info)
@@ -488,15 +485,16 @@ class HPlayerID3Widget(qtw.QWidget):
 			self.title.setText(id3["title"])
 
 		if "lead" in id3:
-			id3["lead"] = ' и '.join(id3["lead"])
-
-			self.lead.setText(id3["lead"])
+			self.lead.setText(' и '.join(id3["lead"]))
 
 		for key in self.keys:
 			if key not in id3:
 				continue
 
 			self.table.set_value(key.capitalize(), id3[key])
+
+		if "lead" in id3:
+			self.table.set_value("Lead", ' '.join(id3["lead"]))
 
 class AnimatedButton(qtw.QPushButton):
 	def __init__(self, parent=None):
@@ -779,28 +777,23 @@ class HPlayerWidget(qtw.QWidget):
 		id3_widget_layout.addStretch()
 
 		self.text_widget = qtw.QLabel()
-		self.text_widget.setObjectName("text")
+		self.text_widget.setWordWrap(True)
+		self.text_widget.setObjectName("active_text_label")
 
 		layout = qtw.QVBoxLayout()
 		layout.setSpacing(10)
-		layout.addStretch()
-		layout.addWidget(self.text_widget, alignment=qtcore.Qt.AlignmentFlag.AlignHCenter)
-		layout.addStretch()
-		layout.addLayout(id3_widget_layout)
+		layout.addWidget(self.text_widget, stretch=1, alignment=qtcore.Qt.AlignmentFlag.AlignHCenter)
+		layout.addLayout(id3_widget_layout, stretch=0)
 
 		layout.addWidget(self.progress)
 
 		self.synced_text = {}
 
+		self.text_labels: list[str] = []
+
 		# qtw.Q
 
 		self.setLayout(layout)
-
-	def resizeEvent(self, event: qtgui.QResizeEvent) -> None:
-		width = event.size().width()
-		self.id3_widget.setMaximumWidth(width // 4)
-
-		super().resizeEvent(event)
 
 	def set_second(self, second: float) -> None:
 		self.progress.set_second(int(second))
@@ -813,13 +806,13 @@ class HPlayerWidget(qtw.QWidget):
 		try:
 			key = float(next(keys))
 
-			# if key >= second:
-			# 	self.text_widget.setText("")
+			if second < key:
+				self.text_widget.setText("")
 
 			for value in self.synced_text.values():
 				key = float(next(keys))
 
-				if key < second:
+				if second >= key:
 					continue
 
 				self.text_widget.setText(value)
@@ -843,11 +836,10 @@ class HPlayerWidget(qtw.QWidget):
 	def update_id3(self, id3: dict) -> None:
 		self.id3_widget.update_id3(id3)
 
-		if "cover" in id3:
-			self.cover.update_cover(id3["cover"])
-
 		width = self.size().width()
-		self.id3_widget.setMaximumWidth(width // 4)
+		self.id3_widget.setFixedWidth(width // 4)
+
+		self.text_widget.setText("")
 
 	def update_interface(self, second: float, duration: int, id3: dict) -> None:
 		self.set_second(second)
@@ -949,6 +941,8 @@ class MenuWidget(qtw.QWidget):
 		x, y = new_size.width() - hint_width, 0
 		width, height = hint_width, new_size.height()
 
+		# print(f"{size=}")
+
 		self.menu.setProperty("pos", qtcore.QPoint(x, y))
 		self.menu.setProperty("size", qtcore.QSize(width, height))
 
@@ -974,7 +968,7 @@ class MenuWidget(qtw.QWidget):
 
 		return result
 
-class ID3WidgetMenu(qtw.QWidget):
+class ID3WidgetMenu(qtw.QLabel):
 	def __init__(self, work_dir: Path, parent=None) -> None:
 		super().__init__(parent=parent)
 
@@ -986,14 +980,9 @@ class ID3WidgetMenu(qtw.QWidget):
 		id3_widget_layout.addWidget(self.id3_widget)
 		id3_widget_layout.addStretch()
 
-		self.id3_widget_bg = qtw.QWidget()
-		self.id3_widget_bg.setObjectName("second_half")
-		self.id3_widget_bg.setLayout(id3_widget_layout)
+		self.setObjectName("second_half")
 
-		id3_widget_bg_layout = qtw.QVBoxLayout()
-		id3_widget_bg_layout.addWidget(self.id3_widget_bg)
-
-		self.setLayout(id3_widget_bg_layout)
+		self.setLayout(id3_widget_layout)
 
 	def update_cover(self, cover: qtgui.QPixmap) -> None:
 		self.id3_widget.update_cover(cover)
@@ -1001,11 +990,53 @@ class ID3WidgetMenu(qtw.QWidget):
 	def update_id3(self, id3: dict) -> None:
 		self.id3_widget.update_id3(id3)
 
-class AudioPlayerClientGUI(qtw.QMainWindow):
+	def resizeEvent(self, event: qtgui.QResizeEvent) -> None:
+		# print(f"{self.id3_widget.sizeHint()=}")
+
+		super().resizeEvent(event)
+
+from dbus_next.aio.message_bus import MessageBus
+from dbus_next.service import ServiceInterface, method, dbus_property
+from dbus_next.constants import PropertyAccess
+from dbus_next.signature import Variant
+
+class AudioPlayerMPrisRootInterface(ServiceInterface):
+	def __init__(self):
+		super().__init__('org.mpris.MediaPlayer2')
+
+	@dbus_property(access=PropertyAccess.READ)
+	def CanQuit(self) -> 'b':
+		return False
+
+	@dbus_property(access=PropertyAccess.READ)
+	def CanRaise(self) -> 'b':
+		return False
+
+	@dbus_property(access=PropertyAccess.READ)
+	def HasTrackList(self) -> 'b':
+		return False
+
+	@dbus_property(access=PropertyAccess.READ)
+	def Identity(self) -> 's':
+		return "r-audio"
+
+	@dbus_property(access=PropertyAccess.READ)
+	def SupportedUriSchemes(self) -> 'as':
+		return ["file"]
+
+	@dbus_property(access=PropertyAccess.READ)
+	def SupportedMimeTypes(self) -> 'as':
+		return ["audio/mpeg", "audio/wav", "audio/ogg", "audio/aac", "audio/flac"]
+
+	@dbus_property(access=PropertyAccess.READ)
+	def DesktopEntry(self) -> 's':
+		return ""
+
+class AudioPlayerClientGUI(qtw.QMainWindow, ServiceInterface):
 	supported_extensions = (".mp4", ".mp3", ".wav", ".ogg", ".aac", ".flac")
 
 	def __init__(self, app: qtw.QApplication, work_dir: Path, config: dict | None=None, translator: Translator | None=None):
-		super().__init__()
+		super().__init__(name='org.mpris.MediaPlayer2.Player')
 		self.setWindowTitle("R-Audio")
 
 		self.work_dir = work_dir
@@ -1014,7 +1045,6 @@ class AudioPlayerClientGUI(qtw.QMainWindow):
 
 		self.update_processing = asyncio.Event()
 
-		self.id3_info = None
 		self.cur_time = 0
 		self.duration = 0
 		self.volume = 0
@@ -1033,9 +1063,12 @@ class AudioPlayerClientGUI(qtw.QMainWindow):
 
 		self.translator = translator
 
-		self.protocol = AudioPlayerClient(config)
+		self.bus = None
+		self.bus_name = "org.mpris.MediaPlayer2.r_audio_player"
 
-		self.setStyleSheet(Path(work_dir / "style.css").read_text(encoding="UTF-8"))
+		self.qss_path = Path(work_dir / "style.css")
+		self.setStyleSheet(self.qss_path.read_text(encoding="UTF-8"))
+		self.old_qss_mtime = self.qss_path.stat().st_mtime
 
 		self.player_widget = HPlayerWidget(work_dir, {
 			"title": "Connecting...",
@@ -1044,10 +1077,6 @@ class AudioPlayerClientGUI(qtw.QMainWindow):
 		})
 
 		self.player_widget.setObjectName("player_widget")
-
-		self.player_widget.on_prev.connect(self.protocol.prev)
-		self.player_widget.on_play_pause.connect(self.protocol.play_pause)
-		self.player_widget.on_next.connect(self.protocol.next)
 
 		self.id3_widget = ID3WidgetMenu(work_dir)
 
@@ -1077,13 +1106,19 @@ class AudioPlayerClientGUI(qtw.QMainWindow):
 
 		self.setObjectName("window")
 
-		qtcore.QTimer.singleShot(0, lambda: asyncio.create_task(self.loop()))
-
 		self.copy_title_shortcut = qtgui.QShortcut(qtgui.QKeySequence("Ctrl+C"), self)
 		self.copy_title_shortcut.setContext(qtcore.Qt.ShortcutContext.WindowShortcut)
 		self.copy_title_shortcut.activated.connect(self.format_song_id3)
 
 		self.clipboard = app.clipboard()
+
+		self.protocol = AudioPlayerClient(config)
+
+		self.player_widget.on_prev.connect(self.protocol.prev)
+		self.player_widget.on_play_pause.connect(self.protocol.play_pause)
+		self.player_widget.on_next.connect(self.protocol.next)
+
+		qtcore.QTimer.singleShot(0, lambda: asyncio.create_task(self.loop()))
 
 		self.protocol.on_id3_info_changed.on(self.id3_info_changed)
 		self.protocol.on_text_changed.on(self.text_changed)
@@ -1094,12 +1129,24 @@ class AudioPlayerClientGUI(qtw.QMainWindow):
 		self.protocol.on_state_changed.on(self.state_changed)
 		self.protocol.on_track_id_changed.on(self.track_id_changed)
 
+		self.timer = qtcore.QTimer()
+		self.timer.timeout.connect(self.check_qss_changed)
+		self.timer.start(1000)
+
+	def check_qss_changed(self) -> None:
+		mtime = self.qss_path.stat().st_mtime
+
+		if mtime != self.old_qss_mtime:
+			self.setStyleSheet(self.qss_path.read_text(encoding="UTF-8"))
+
+			self.old_qss_mtime = mtime
+
 	def cover_changed(self, _: str, cover: bytes) -> None:
 		if self.cover_name:
-			cover_dir = self.get_cover_name()
+			cover_dir = Path(self.get_cover_name())
 
-			if os.path.isfile(cover_dir):
-				os.remove(cover_dir)
+			if not cover_dir.is_file():
+				cover_dir.write_bytes(cover)
 
 		pixmap = qtgui.QPixmap()
 		success = pixmap.loadFromData(cover)
@@ -1119,11 +1166,15 @@ class AudioPlayerClientGUI(qtw.QMainWindow):
 
 			self.background_label.setPixmap(background_pixmap)
 
-	def id3_info_changed(self, _: str, value: dict[str, Any]) -> None:
-		self.id3_info: dict[str, Any] = value
+	@property
+	def id3_info(self) -> dict[str, str | list[str]]:
+		return self.protocol.id3_info
 
+	def id3_info_changed(self, _: str, value: dict[str, Any]) -> None:
 		self.player_widget.update_id3(self.id3_info)
 		self.id3_widget.update_id3(self.id3_info)
+
+		self.emit_properties_changed(self.get_metadata())
 
 	def time_changed(self, _: str, value: float) -> None:
 		self.cur_time = value
@@ -1146,10 +1197,13 @@ class AudioPlayerClientGUI(qtw.QMainWindow):
 		self.protocol.update_cover(self.track_id, 256)
 
 	def text_changed(self, _: str, text: dict[str, Any]) -> None:
-		self.player_widget.update_text(text["text"])
+		type = text["text_status"]
+
+		if type == "synced":
+			self.player_widget.update_text(text["text"])
 
 	def format_song_id3(self) -> None:
-		if not self.id3_info or not self.clipboard:
+		if not self.clipboard:
 			return
 
 		result = f"{self.id3_info["lead"]} -- {self.id3_info["title"]}"
@@ -1157,15 +1211,158 @@ class AudioPlayerClientGUI(qtw.QMainWindow):
 		self.clipboard.setText(result)
 
 	async def loop(self) -> None:
+		await self.open_dbus()
+
 		await self.protocol.loop()
 
 	def get_cover_name(self) -> str:
-		return f"/tmp/{self.cover_name}_{self.track_id}"
+		return f"/tmp/{self.cover_name}_{self.track_id}.jpg"
 
 	async def close_connection(self) -> None:
-		self.id3_info = None
-
 		await self.protocol.close_connection()
+
+	async def open_dbus(self) -> None:
+		if self.bus is not None:
+			return
+
+		print("Opening DBus...")
+
+		self.bus = await MessageBus().connect()
+
+		root = AudioPlayerMPrisRootInterface()
+
+		self.bus.export("/org/mpris/MediaPlayer2", root)
+		self.bus.export("/org/mpris/MediaPlayer2", self)
+
+		await self.bus.request_name(self.bus_name)
+
+		print("Opening DBus done")
+
+	@dbus_property(access=PropertyAccess.READ)
+	def CanControl(self) -> 'b':
+		return True
+
+	@dbus_property(access=PropertyAccess.READ)
+	async def PlaybackStatus(self) -> 's':
+		return self.state
+
+	def get_metadata(self) -> 'a{sv}':
+		cover_dir = self.get_cover_name()
+
+		print(self.id3_info)
+
+		result = {
+			"mpris:trackid": Variant("o", f"/com/r_audio/track/{self.track_id}"),
+			"mpris:length": Variant("x", int(self.duration * 1000 * 1000)),
+			"mpris:artUrl": Variant("s", f"file://{cover_dir}"),
+			"xesam:title": Variant("s", self.id3_info.get("title", "N/A")),
+			"xesam:artist": Variant("as", self.id3_info.get("lead", ["N/A"])),
+			"xesam:albumArtist": Variant("as", self.id3_info.get("lead", ["N/A"])),
+			"xesam:genre": Variant("as", [self.id3_info.get("genre", "N/A")]),
+		}
+
+		album = self.id3_info.get("album", "N/A")
+
+		if album:
+			result["xesam:album"] = Variant("s", album)
+
+		return result
+
+	@dbus_property(access=PropertyAccess.READ)
+	def Metadata(self) -> 'a{sv}':
+		return self.get_metadata()
+
+	@dbus_property(access=PropertyAccess.READ)
+	def CanPause(self) -> 'b':
+		return True
+
+	@dbus_property(access=PropertyAccess.READ)
+	def CanPlay(self) -> 'b':
+		return True
+
+	@dbus_property(access=PropertyAccess.READ)
+	def CanGoNext(self) -> 'b':
+		return True
+
+	@dbus_property(access=PropertyAccess.READ)
+	def CanGoPrevious(self) -> 'b':
+		return True
+
+	@dbus_property(access=PropertyAccess.READ)
+	def CanSeek(self) -> 'b':
+		return True
+
+	@dbus_property(access=PropertyAccess.READ)
+	def CanSetPosition(self) -> 'b':
+		return True
+
+	@dbus_property(access=PropertyAccess.READ)
+	def LoopStatus(self) -> 's':
+		return "None"
+
+	@dbus_property(access=PropertyAccess.READ)
+	def Shuffle(self) -> 'b':
+		return False
+
+	@dbus_property(access=PropertyAccess.READWRITE)
+	def Volume(self) -> 'd':
+		return self.volume
+
+	@Volume.setter
+	def Volume(self, val: 'd'):
+		self.protocol.volume_set(val)
+
+	@dbus_property(access=PropertyAccess.READ)
+	def Position(self) -> 'x':
+		return int(self.protocol.cur_time * 1000 * 1000)
+
+	@method()
+	def SetPosition(self, _track_id: 'o', val: 'x'):
+		track_id = int(str(_track_id).split("/")[-1])
+
+		if track_id != self.track_id:
+			return
+
+		self.protocol.cur_time = val / (1000 * 1000)
+
+		self.Seeked(val)
+
+	@method()
+	def Seek(self, val: 'x'):
+		self.protocol.cur_time = self.protocol.cur_time + (val / (1000 * 1000))
+
+		self.Seeked(val)
+
+	@method(name="Seeked")
+	def Seeked(self, Position: 'x'):
+		pass
+
+	@method()
+	async def Play(self):
+		self.protocol.play()
+
+	@method()
+	async def Pause(self):
+		self.protocol.pause()
+
+	@method()
+	async def Stop(self):
+		self.protocol.pause()
+
+	@method()
+	async def PlayPause(self):
+		self.protocol.play_pause()
+
+	@method()
+	async def Previous(self):
+		if self.second >= 5:
+			self.second = 0
+		else:
+			self.protocol.prev()
+
+	@method()
+	async def Next(self):
+		self.protocol.next()
 
 	def __repr__(self) -> str:
 		return f"""{self.update_processing=}

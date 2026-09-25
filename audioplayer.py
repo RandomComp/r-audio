@@ -106,10 +106,6 @@ class AudioPlayer:
 		self.ready_to_quit = asyncio.Event()
 		self.ready_to_quit.set()
 
-		self.something_changed = asyncio.Event()
-		self.something_changed.clear()
-		self.what_changed: list[str] = []
-
 		self.__lines_outputed = 0
 
 		self.stream = None
@@ -237,30 +233,18 @@ class AudioPlayer:
 
 			# self.state = "Nothing to play"
 
-		self.something_changed.set()
-
 	async def prev(self) -> None:
 		self.audio.prev()
-
-		self.something_changed.set()
 
 	def play(self) -> None:
 		self.state = "Playing"
 
 		self.stream.start()
 
-		self.something_changed.set()
-		self.what_changed.append("state")
-		self.what_changed.append("cur_time")
-
 	def pause(self) -> None:
 		self.state = "Paused"
 
 		self.stream.stop()
-
-		self.something_changed.set()
-		self.what_changed.append("state")
-		self.what_changed.append("cur_time")
 
 	def _id3_to_json(self) -> tuple[str, str]:
 		text = ""
@@ -274,7 +258,7 @@ class AudioPlayer:
 
 		return "OK", text
 
-	def get_info(self, what_changed: list[str] | None=None) -> str:
+	def get_info(self, what_changed: list[str] | None=None) -> dict[str, str | dict | list]:
 		data = {
 			"cur_time": self.second,
 			"duration": self.audio.duration,
@@ -286,7 +270,7 @@ class AudioPlayer:
 		}
 
 		if not what_changed:
-			return json.dumps(data, ensure_ascii=False, cls=BytesEncoder)
+			return data
 
 		result = {}
 
@@ -298,7 +282,7 @@ class AudioPlayer:
 
 			result["text"] = {"text": {}, "text_status": "not found"}
 
-			db_file = utils.query(self.playlist_payback.db["files"], ["id"], self.track_id, [["text"], ["text_status"]])
+			db_file = utils.query(self.playlist_payback.db["files"], [["id"]], [self.track_id], [["text"], ["text_status"]])
 
 			if len(db_file) <= 0:
 				result["text"]["text"] = {}
@@ -320,12 +304,15 @@ class AudioPlayer:
 				result_text = {}
 
 				for line in text.splitlines():
+					if not line:
+						continue
+
 					line = line[1:].strip()
 
 					minute, line = line.split(":", maxsplit=1)
 					second, line = line.split("]", maxsplit=1)
 
-					line = line[1:].strip()
+					line = line.strip()
 
 					time = float(minute) * 60.0 + float(second)
 
@@ -335,7 +322,7 @@ class AudioPlayer:
 			else:
 				result["text"]["text"] = text
 
-		return json.dumps(result, ensure_ascii=False, cls=BytesEncoder)
+		return result
 
 	async def do_next(self, argv: list[str]) -> tuple[str, str]:
 		await self.next()
@@ -365,19 +352,10 @@ class AudioPlayer:
 
 		return "OK", ""
 
-	async def do_update(self, argv: list[str]) -> tuple[str, str]:
-		if self.something_changed.is_set():
-			answer = self.get_info(self.what_changed)
-
-			self.something_changed.clear()
-			self.what_changed = []
-
-			return "OK", answer
-
-		return "OK", ""
-
 	async def do_get_info(self, argv: list[str]) -> tuple[str, str]:
-		return "OK", self.get_info(argv[1:])
+		result = self.get_info(argv[1:])
+
+		return "OK", json.dumps(result, ensure_ascii=False, cls=BytesEncoder)
 
 	async def do_get_cover(self, argv: list[str]) -> tuple[str, str]:
 		if len(argv) <= 2:
@@ -386,7 +364,7 @@ class AudioPlayer:
 		id = argv[1]
 		size = int(argv[2])
 
-		result = utils.query(self.playlist_payback.db["files"], ["id"], id, [["title"], ["lead"], ["cover"]])
+		result = utils.query(self.playlist_payback.db["files"], [["id"]], [id], [["title"], ["lead"], ["cover"]])
 
 		if len(result) <= 0:
 			return "ERROR", f"Not known track with id {id}"
@@ -442,17 +420,27 @@ class AudioPlayer:
 
 		if argv[1] == "query":
 			if len(argv) <= 2:
-				return "ERROR", "Expected category for 'query' subcommand of 'db'"
+				return "ERROR", "Expected where key for 'query' subcommand of 'db'"
 
-			category = argv[2]
+			where_key = argv[2]
 
 			if len(argv) <= 3:
-				return "ERROR", f"Expected key for 'db|query|{category}'"
+				return "ERROR", f"Expected where key for 'db|query|{where_key}'"
 
-			key = argv[3]
+			where_value = argv[3]
 			values = argv[4:]
 
-			result = utils.query(self.playlist_payback.db["files"], category.split("."), key, [value.split(".") for value in values])
+			result = utils.query(self.playlist_payback.db["files"], [where_key.split(".")], where_value.split("."), [value.split(".") for value in values])
+			result = json.dumps(result, ensure_ascii=False)
+
+			return "OK", result
+
+		elif argv[1] == "find":
+			prompts = argv[2:]
+
+			result = []
+
+			result = utils.query(self.playlist_payback.db["files"], [["title"]], [], [])
 			result = json.dumps(result, ensure_ascii=False)
 
 			return "OK", result
@@ -502,8 +490,6 @@ class AudioPlayer:
 
 		self.audio.playlist = self.playlist
 
-		self.something_changed.set()
-
 		result = json.dumps(self.playlist, ensure_ascii=False)
 
 		return "OK", result
@@ -524,7 +510,6 @@ class AudioPlayer:
 			"db": self.do_db,
 			"cover": self.do_get_cover,
 			"info": self.do_get_info,
-			"update": self.do_update,
 			"quit": self.do_quit,
 		}
 
@@ -539,6 +524,8 @@ class AudioPlayer:
 
 	async def handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
 		ret = False
+
+		local_state = {}
 
 		try:
 			while not ret:
@@ -556,12 +543,22 @@ class AudioPlayer:
 
 				status = answer = ""
 
-				status_and_answer = await self.handle_message(command, argv)
+				if command == "update":
+					result: dict[str, str | dict | list] = {}
 
-				if not status_and_answer:
-					continue
+					cur_state = self.get_info()
+					result = {key: value for key, value in cur_state.items() if key not in local_state or local_state[key] != value}
+					local_state = cur_state
 
-				status, answer = status_and_answer
+					answer = json.dumps(result, ensure_ascii=False)
+					status = "OK"
+				else:
+					status_and_answer = await self.handle_message(command, argv)
+
+					if not status_and_answer:
+						continue
+
+					status, answer = status_and_answer
 
 				answer = f"{status}|{' '.join(argv)}|{answer}"
 
@@ -595,8 +592,6 @@ class AudioPlayer:
 
 		self.id3_info = {key: track_db[key] for key in keys}
 		self.track_id = track_db["id"]
-
-		self.something_changed.set()
 
 	def load(self, playlist_payback: Playlist) -> None:
 		playlist = ListGenerator(playlist_payback.gen())
@@ -690,9 +685,6 @@ class AudioPlayer:
 	def volume_set(self, percent: float) -> None:
 		self.volume = min(1, max(0, percent))
 
-		self.something_changed.set()
-		self.what_changed.append("volume")
-
 	def volume_get(self) -> float:
 		return self.volume
 
@@ -703,9 +695,6 @@ class AudioPlayer:
 	@second.setter
 	def second(self, val: float) -> None:
 		self.audio.second = val
-
-		self.something_changed.set()
-		self.what_changed.append("cur_time")
 
 	async def reset(self) -> None:
 		if self.verbose:
